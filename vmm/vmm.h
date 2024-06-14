@@ -35,7 +35,7 @@
 #define VMM_STATUS_FILE_INVALID                 STATUS_FILE_INVALID
 #define VMM_STATUS_FILE_SYSTEM_LIMITATION       STATUS_FILE_SYSTEM_LIMITATION
 
-#define VMM_MEMMAP_ENTRIES_MAX                  0x4000
+#define VMM_MEMMAP_ENTRIES_MAX                  0x100000
 
 #define VMM_MEMMAP_PAGE_A                       0x0000000000000001
 #define VMM_MEMMAP_PAGE_W                       0x0000000000000002
