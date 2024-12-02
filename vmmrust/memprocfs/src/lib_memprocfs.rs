@@ -24,8 +24,10 @@
 //! 
 //! <b>Read and write memory</b> by using the methods
 //! [`mem_read()`](VmmProcess::mem_read()),
-//! [`mem_read_ex()`](VmmProcess::mem_read_ex()) and
-//! [`mem_write()`](VmmProcess::mem_write()).
+//! [`mem_read_ex()`](VmmProcess::mem_read_ex()),
+//! [`mem_read_as()`](VmmProcess::mem_read_as()) and
+//! [`mem_write()`](VmmProcess::mem_write()) /
+//! [`mem_write_as()`](VmmProcess::mem_write_as()).
 //! Virtual memory is read from [`VmmProcess`] struct.
 //! Physical memory is read from the [`Vmm`] struct.
 //! 
@@ -137,9 +139,7 @@ pub const FLAG_NOPAGING_IO                          : u64 = 0x0020;
 pub const FLAG_NOCACHEPUT                           : u64 = 0x0100;
 /// Only fetch from the most recent active cache region when reading.
 pub const FLAG_CACHE_RECENT_ONLY                    : u64 = 0x0200;
-/// Do not perform additional predictive page reads.
-///
-/// This is default on smaller requests.
+/// Deprecated/Unused.
 pub const FLAG_NO_PREDICTIVE_READ                   : u64 = 0x0400;
 /// Disable/override any use of VMM_FLAG_FORCECACHE_READ.
 /// 
@@ -251,6 +251,7 @@ pub const PLUGIN_NOTIFY_VM_ATTACH_DETACH            : u32 = 0x01000400;
 /// 
 /// # Created By
 /// - [`Vmm::new()`]
+/// - [`Vmm::new_from_leechcore()`]
 /// - [`Vmm::new_from_virtual_machine()`]
 /// - `plugin sub-system`
 /// 
@@ -296,7 +297,7 @@ pub struct Vmm<'a> {
     parent_vmm : Option<&'a Vmm<'a>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum VmmLogLevel {
     _1Critical,
     _2Warning,
@@ -327,7 +328,7 @@ pub struct VmmMapNetEntry {
     pub desc : String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum VmmMapPfnType {
     Zero,
     Free,
@@ -339,7 +340,7 @@ pub enum VmmMapPfnType {
     Transition,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum VmmMapPfnTypeExtended {
     Unknown,
     Unused,
@@ -355,7 +356,7 @@ pub enum VmmMapPfnTypeExtended {
 /// 
 /// # Created By
 /// - [`vmm.map_pfn()`](Vmm::map_pfn())
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct VmmMapPfnEntry {
     pub pfn : u32,
     pub location : VmmMapPfnType,
@@ -371,11 +372,77 @@ pub struct VmmMapPfnEntry {
     pub pte_original : u64,
 }
 
+/// Info: Kernel device entries.
+/// 
+/// # Created By
+/// - [`vmm.map_kdevice()`](Vmm::map_kdevice())
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VmmMapKDeviceEntry {
+    /// Virtual address of the device object.
+    pub va : u64,
+    /// Depth of the device object.
+    pub depth : u32,
+    /// Device type according to FILE_DEVICE_* in the Windows API.
+    pub device_type : u32,
+    /// Device type name.
+    pub device_type_name : String,
+    /// Virtual address of the associated driver object.
+    pub va_driver_object : u64,
+    /// Virtual address of the attached device object.
+    pub va_attached_device : u64,
+    /// Virtual address for some device types.
+    pub va_file_system_device : u64,
+    /// Volume info for some device types.
+    pub volume_info : String,
+}
+
+/// Info: Kernel driver entries.
+/// 
+/// # Created By
+/// - [`vmm.map_kdriver()`](Vmm::map_kdriver())
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VmmMapKDriverEntry {
+    /// Virtual address of the driver object.
+    pub va : u64,
+    /// Virtual address of the start of the loaded driver in memory (the module PE header).
+    pub va_driver_start : u64,
+    /// Size of the loaded driver in memory.
+    pub cb_driver_size : u64,
+    /// Virtual address of the associated device object.
+    pub va_device_object : u64,
+    /// Device name.
+    pub name : String,
+    /// Device path.
+    pub path : String,
+    /// Service key name.
+    pub service_key_name : String,
+    /// Virtual addresses of the major functions.
+    pub major_function : [u64; 28],
+}
+
+/// Info: Kernel named object manager entries.
+/// 
+/// # Created By
+/// - [`vmm.map_kobject()`](Vmm::map_kobject())
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VmmMapKObjectEntry {
+    /// Virtual address of the object.
+    pub va : u64,
+    /// Virtual address of the parent of this object, or 0 if top-level object.
+    pub va_parent : u64,
+    /// Virtual address of the object's children object (in case of a directlry object).
+    pub children : Vec<u64>,
+    /// Object name.
+    pub name : String,
+    /// Object type.
+    pub object_type : String,
+}
+
 /// Info: Kernel pool entries.
 /// 
 /// # Created By
 /// - [`vmm.map_pool()`](Vmm::map_pool())
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct VmmMapPoolEntry {
     pub va : u64,
     pub cb : u32,
@@ -389,7 +456,7 @@ pub struct VmmMapPoolEntry {
 /// 
 /// # Created By
 /// - [`vmm.map_memory()`](Vmm::map_memory())
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct VmmMapMemoryEntry {
     pub pa : u64,
     pub cb : u64
@@ -506,7 +573,45 @@ impl Vmm<'_> {
     /// };
     /// ```
     pub fn new<'a>(vmm_lib_path : &str, args: &Vec<&str>) -> ResultEx<Vmm<'a>> {
-        return crate::impl_new(vmm_lib_path, 0, args);
+        return crate::impl_new(vmm_lib_path, None, 0, args);
+    }
+
+    /// <b>MemProcFS Initialization Function.</b>
+    /// 
+    /// The [`Vmm`] struct is the base of the MemProcFS API. All API accesses
+    /// takes place from the [`Vmm`] struct and its sub-structs.
+    /// 
+    /// The [`Vmm`] struct acts as a wrapper around the native MemProcFS VMM API.
+    /// 
+    /// This function initializes a new [`Vmm`] struct from an already existing
+    /// LeechCore object. The LeechCore object may be dropped at user discretion
+    /// after the [`Vmm`] object has been created without it being affected. The
+    /// underlying device will be closed when all internal LeechCore references
+    /// have been dropped.
+    /// 
+    /// 
+    /// # Arguments
+    /// * `leechcore_existing` - The LeechCore struct to use as underlying device when initializing MemProcFS VMM.
+    /// * `args` - MemProcFS command line arguments as a Vec<&str> not including any -device arguments.
+    /// 
+    /// MemProcFS command line argument documentation is found on the [MemProcFS wiki](https://github.com/ufrisk/MemProcFS/wiki/_CommandLine).
+    /// 
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// // Initialize MemProcFS VMM on a Windows system using an existing
+    /// // LeechCore object to parse a memory dump. Note that no '-device'
+    /// // argument should be supplied when using Vmm::new_from_leechcore.
+    /// let args = ["-printf", "-v", "-waitinitialize"].to_vec();
+    /// if let Ok(vmm) = Vmm::new_from_leechcore(&leechcore_existing, &args) {
+    ///     ...
+    ///     // The underlying native vmm is automatically closed 
+    ///     // when the vmm object goes out of scope.
+    /// };
+    /// ```
+    pub fn new_from_leechcore<'a>(leechcore_existing : &LeechCore, args: &Vec<&str>) -> ResultEx<Vmm<'a>> {
+        return crate::impl_new_from_leechcore(leechcore_existing, args);
     }
 
     /// Initialize MemProcFS from a host VMM and a child VM.
@@ -717,6 +822,54 @@ impl Vmm<'_> {
     /// ```
     pub fn map_pfn(&self, pfns : &Vec<u32>, is_extended : bool) -> ResultEx<Vec<VmmMapPfnEntry>> {
         return self.impl_map_pfn(pfns, is_extended);
+    }
+
+    /// Retrieve the kernel device map.
+    /// 
+    /// # Examples
+    /// ```
+    /// if let Ok(kdevices) = vmm.map_kdevice() {
+    ///     println!("Number of devices: {}.", kdevices.len());
+    ///     for kdevice in &*kdevices {
+    ///         println!("{kdevice} ");
+    ///     }
+    ///     println!("");
+    /// }
+    /// ```
+    pub fn map_kdevice(&self) -> ResultEx<Vec<VmmMapKDeviceEntry>> {
+        return self.impl_map_kdevice();
+    }
+
+    /// Retrieve the kernel driver map.
+    /// 
+    /// # Examples
+    /// ```
+    /// if let Ok(kdrivers) = vmm.map_kdriver() {
+    ///     println!("Number of drivers: {}.", kdrivers.len());
+    ///     for kdriver in &*kdrivers {
+    ///         println!("{kdriver} ");
+    ///     }
+    ///     println!("");
+    /// }
+    /// ```
+    pub fn map_kdriver(&self) -> ResultEx<Vec<VmmMapKDriverEntry>> {
+        return self.impl_map_kdriver();
+    }
+
+    /// Retrieve the kernel named objects map.
+    /// 
+    /// # Examples
+    /// ```
+    /// if let Ok(kobjects) = vmm.map_kobject() {
+    ///     println!("Number of objects: {}.", kobjects.len());
+    ///     for kobject in &*kobjects {
+    ///         println!("{kobject} ");
+    ///     }
+    ///     println!("");
+    /// }
+    /// ```
+    pub fn map_kobject(&self) -> ResultEx<Vec<VmmMapKObjectEntry>> {
+        return self.impl_map_kobject();
     }
 
     /// Retrieve the kernel pool allocation info map.
@@ -1161,7 +1314,7 @@ impl VmmMapPoolEntry {
 /// let pdb = kernel.pdb();
 /// println!("{pdb}");
 /// ```
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct VmmKernel<'a> {
     vmm : &'a Vmm<'a>,
 }
@@ -1231,7 +1384,7 @@ impl VmmKernel<'_> {
 /// // Retrieve the PDB struct associated with a process module.
 /// let pdb = vmmprocess.pdb_from_module_name("ntdll.dll")?;
 /// ```
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct VmmPdb<'a> {
     vmm : &'a Vmm<'a>,
     pub module : String,
@@ -1570,13 +1723,13 @@ impl VmmScatterMemory<'_> {
 /// let sessionid : u32 = winlogon.mem_read_as(va, 0)?;
 /// println!("win32kbase.sys!gSessionId -> {:x} : {}", va, sessionid);
 /// ```
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct VmmProcess<'a> {
-    vmm : &'a Vmm<'a>,
+    pub vmm : &'a Vmm<'a>,
     pub pid : u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum VmmIntegrityLevelType {
     Unknown,
     Untrusted,
@@ -1588,7 +1741,7 @@ pub enum VmmIntegrityLevelType {
     Protected,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum VmmMemoryModelType {
     NA,
     X86,
@@ -1596,7 +1749,7 @@ pub enum VmmMemoryModelType {
     X64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum VmmSystemType {
     UnknownPhysical,
     UnknownX64,
@@ -1663,7 +1816,7 @@ pub struct VmmProcessInfo {
 ///     }
 /// }
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct VmmProcessMapDirectoryEntry {
     pub pid : u32,
     pub name : &'static str,
@@ -1725,7 +1878,7 @@ pub struct VmmProcessMapHandleEntry {
     pub tp : String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum VmmProcessMapHeapType {
     NA,
     NtHeap,
@@ -1746,7 +1899,7 @@ pub enum VmmProcessMapHeapType {
 ///     }
 /// }
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct VmmProcessMapHeapEntry {
     pub pid : u32,
     pub tp : VmmProcessMapHeapType,
@@ -1755,7 +1908,7 @@ pub struct VmmProcessMapHeapEntry {
     pub number : u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum VmmProcessMapHeapAllocType {
     NA,
     NtHeap,
@@ -1783,7 +1936,7 @@ pub enum VmmProcessMapHeapAllocType {
 ///     println!("");
 /// }
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct VmmProcessMapHeapAllocEntry {
     pub pid : u32,
     pub va : u64,
@@ -1843,7 +1996,7 @@ pub struct VmmProcessMapModuleVersionEntry {
     pub product_version : String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum VmmProcessMapModuleType {
     Normal,
     Data,
@@ -1960,7 +2113,7 @@ pub struct VmmProcessSectionEntry {
 ///     }
 /// }
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct VmmProcessMapThreadEntry {
     pub pid : u32,
     pub thread_id : u32,
@@ -1989,6 +2142,35 @@ pub struct VmmProcessMapThreadEntry {
     pub kernel_time : u32,
     pub suspend_count : u8,
     pub wait_reason : u8
+}
+
+/// Info: Process: Thread Callstack.
+/// 
+/// # Created By
+/// - [`vmmprocess.map_thread_callstack()`](VmmProcess::map_thread_callstack())
+/// - [`vmmprocess.map_thread_callstack_ex()`](VmmProcess::map_thread_callstack_ex())
+/// 
+/// # Examples
+/// ```
+/// // in this example the TID (thread id) is 9600.
+/// if let Ok(thread_callstack) = vmmprocess.map_thread_callstack(9600) {
+///     for cs_entry in &*thread_callstack {
+///         println!("{cs_entry}");
+///     }
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VmmProcessMapThreadCallstackEntry {
+    pub pid : u32,
+    pub tid : u32,
+    pub i : u32,
+    pub is_reg_present : bool,
+    pub va_ret_addr : u64,
+    pub va_rsp : u64,
+    pub va_base_sp : u64,
+    pub displacement : i32,
+    pub module : String,
+    pub function : String,
 }
 
 /// Info: Process: Unloaded modules.
@@ -2051,7 +2233,7 @@ pub struct VmmProcessMapVadEntry {
     pub vadex_page_count : u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum VmmProcessMapVadExType {
     NA,
     Hardware,
@@ -2367,6 +2549,40 @@ impl VmmProcess<'_> {
     /// ```
     pub fn map_thread(&self) -> ResultEx<Vec<VmmProcessMapThreadEntry>> {
         return self.impl_map_thread();
+    }
+
+    /// Info: Process: Thread Callstack.
+    /// 
+    /// For additional information see the [`VmmProcessMapThreadCallstackEntry`] struct.
+    /// 
+    /// # Examples
+    /// ```
+    /// // in this example the TID (thread id) is 9600.
+    /// if let Ok(thread_callstack) = vmmprocess.map_thread_callstack(9600) {
+    ///     for cs_entry in &*thread_callstack {
+    ///         println!("{cs_entry}");
+    ///     }
+    /// }
+    /// ```
+    pub fn map_thread_callstack(&self, tid : u32) -> ResultEx<Vec<VmmProcessMapThreadCallstackEntry>> {
+        return self.impl_map_thread_callstack(tid, 0);
+    }
+
+    /// Info: Process: Thread Callstack.
+    /// 
+    /// For additional information see the [`VmmProcessMapThreadCallstackEntry`] struct.
+    /// 
+    /// # Examples
+    /// ```
+    /// // in this example the TID (thread id) is 9600.
+    /// if let Ok(thread_callstack) = vmmprocess.map_thread_callstack_ex(9600, 0) {
+    ///     for cs_entry in &*thread_callstack {
+    ///         println!("{cs_entry}");
+    ///     }
+    /// }
+    /// ```
+    pub fn map_thread_callstack_ex(&self, tid : u32, flags : u32) -> ResultEx<Vec<VmmProcessMapThreadCallstackEntry>> {
+        return self.impl_map_thread_callstack(tid, flags);
     }
 
     /// Retrieve the unloaded module info map.
@@ -2692,7 +2908,7 @@ impl VmmProcess<'_> {
 ///     println!("{hive} size={} path={}", hive.size, hive.path);
 /// }
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VmmRegHive<'a> {
     vmm : &'a Vmm<'a>,
     pub va : u64,
@@ -2769,7 +2985,7 @@ impl VmmRegHive<'_> {
 /// let regkey = vmm.reg_key("0xffffba061a908000\\ROOT\\Microsoft\\Windows\\CurrentVersion\\Run")?
 /// println!("{regkey");
 /// ```
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct VmmRegKey<'a> {
     vmm : &'a Vmm<'a>,
     /// Key name.
@@ -2857,6 +3073,7 @@ impl VmmRegKey<'_> {
 }
 
 #[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum VmmRegValueType {
     REG_NONE,
     REG_SZ(String),
@@ -2906,7 +3123,7 @@ pub enum VmmRegValueType {
 ///     println!("REG_DWORD: 0x{:08x}", dw);
 /// }
 /// ```
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct VmmRegValue<'a> {
     vmm : &'a Vmm<'a>,
     /// Value name.
@@ -3692,7 +3909,7 @@ impl<T> VmmPluginInitializationContext<T> {
 /// 
 /// ```
 /// // Create a new LeechCore instance:
-/// let lc = LeechCore::new('fpga://algo=0', LeechCore::LC_CONFIG_PRINTF_ENABLED)?;
+/// let lc = LeechCore::new('C:\\Temp\\MemProcFS\\leechcore.dll', 'fpga://algo=0', LeechCore::LC_CONFIG_PRINTF_ENABLED)?;
 /// ```
 /// 
 /// ```
@@ -3701,6 +3918,7 @@ impl<T> VmmPluginInitializationContext<T> {
 /// ```
 #[derive(Debug)]
 pub struct LeechCore {
+    path_lc : String,
     native : LcNative,
 }
 
@@ -3710,7 +3928,7 @@ pub struct LeechCore {
 /// - [`LeechCore::get_bars()`]
 /// - LeechCore PCIe BAR callback.
 /// ```
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct LcBar {
     /// BAR is valid.
     pub is_valid : bool,
@@ -4338,6 +4556,9 @@ struct VmmNative {
     VMMDLL_ProcessGetInformation :  extern "C" fn(hVMM : usize, pid : u32, pProcessInformation : *mut CProcessInformation, pcbProcessInformation : *mut usize) -> bool,
     VMMDLL_ProcessGetInformationString : extern "C" fn(hVMM : usize, pid : u32, fOptionString : u32) -> *const c_char,
 
+    VMMDLL_Map_GetKDeviceU :        extern "C" fn(hVMM : usize, ppPoolMap : *mut *mut CKDeviceMap) -> bool,
+    VMMDLL_Map_GetKDriverU :        extern "C" fn(hVMM : usize, ppPoolMap : *mut *mut CKDriverMap) -> bool,
+    VMMDLL_Map_GetKObjectU :        extern "C" fn(hVMM : usize, ppPoolMap : *mut *mut CKObjectMap) -> bool,
     VMMDLL_Map_GetNetU :            extern "C" fn(hVMM : usize, ppNetMap : *mut *mut CNetMap) -> bool,
     VMMDLL_Map_GetPfnEx :           extern "C" fn(hVMM : usize, pPfns : *const u32, cPfns : u32, ppPfnMap : *mut *mut CPfnMap, flags : u32) -> bool,
     VMMDLL_Map_GetPhysMem :         extern "C" fn(hVMM : usize, ppPhysMemMap : *mut *mut CMemoryMap) -> bool,
@@ -4360,6 +4581,7 @@ struct VmmNative {
     VMMDLL_Map_GetModuleU :         extern "C" fn(hVMM : usize, pid : u32, ppModuleMap : *mut *mut CModuleMap, flags : u32) -> bool,
     VMMDLL_Map_GetPteU :            extern "C" fn(hVMM : usize, pid : u32, fIdentifyModules : bool, ppPteMap : *mut *mut CPteMap) -> bool,
     VMMDLL_Map_GetThread :          extern "C" fn(hVMM : usize, pid : u32, ppThreadMap : *mut *mut CThreadMap) -> bool,
+    VMMDLL_Map_GetThreadCallstackU: extern "C" fn(hVMM : usize, pid : u32, tid : u32, flags : u32, ppThreadCallstack : *mut *mut CThreadCallstackMap) -> bool,
     VMMDLL_Map_GetUnloadedModuleU : extern "C" fn(hVMM : usize, pid : u32, ppUnloadedModuleMap : *mut *mut CUnloadedModuleMap) -> bool,
     VMMDLL_Map_GetVadU :            extern "C" fn(hVMM : usize, pid : u32, fIdentifyModules : bool, ppVadMap : *mut *mut CVadMap) -> bool,
     VMMDLL_Map_GetVadEx :           extern "C" fn(hVMM : usize, pid : u32, oPage : u32, cPage : u32, ppVadExMap : *mut *mut CVadExMap) -> bool,
@@ -4378,7 +4600,7 @@ struct VmmNative {
 }
 
 #[allow(non_snake_case)]
-fn impl_new<'a>(vmm_lib_path : &str, h_vmm_existing_opt : usize, args: &Vec<&str>) -> ResultEx<Vmm<'a>> {
+fn impl_new<'a>(vmm_lib_path : &str, lc_existing_opt : Option<&LeechCore>, h_vmm_existing_opt : usize, args: &Vec<&str>) -> ResultEx<Vmm<'a>> {
     unsafe {
         // load MemProcFS native library (vmm.dll / vmm.so):
         // vmm is however dependant on leechcore which must be loaded first...
@@ -4428,6 +4650,9 @@ fn impl_new<'a>(vmm_lib_path : &str, h_vmm_existing_opt : usize, args: &Vec<&str
         let VMMDLL_ProcessGetProcAddressU = *lib.get(b"VMMDLL_ProcessGetProcAddressU")?;
         let VMMDLL_ProcessGetInformation = *lib.get(b"VMMDLL_ProcessGetInformation")?;
         let VMMDLL_ProcessGetInformationString = *lib.get(b"VMMDLL_ProcessGetInformationString")?;
+        let VMMDLL_Map_GetKDeviceU = *lib.get(b"VMMDLL_Map_GetKDeviceU")?;
+        let VMMDLL_Map_GetKDriverU = *lib.get(b"VMMDLL_Map_GetKDriverU")?;
+        let VMMDLL_Map_GetKObjectU = *lib.get(b"VMMDLL_Map_GetKObjectU")?;
         let VMMDLL_Map_GetNetU = *lib.get(b"VMMDLL_Map_GetNetU")?;
         let VMMDLL_Map_GetPfnEx = *lib.get(b"VMMDLL_Map_GetPfnEx")?;
         let VMMDLL_Map_GetPhysMem = *lib.get(b"VMMDLL_Map_GetPhysMem")?;
@@ -4448,6 +4673,7 @@ fn impl_new<'a>(vmm_lib_path : &str, h_vmm_existing_opt : usize, args: &Vec<&str
         let VMMDLL_Map_GetModuleU = *lib.get(b"VMMDLL_Map_GetModuleU")?;
         let VMMDLL_Map_GetPteU = *lib.get(b"VMMDLL_Map_GetPteU")?;
         let VMMDLL_Map_GetThread = *lib.get(b"VMMDLL_Map_GetThread")?;
+        let VMMDLL_Map_GetThreadCallstackU = *lib.get(b"VMMDLL_Map_GetThread_CallstackU")?;
         let VMMDLL_Map_GetUnloadedModuleU = *lib.get(b"VMMDLL_Map_GetUnloadedModuleU")?;
         let VMMDLL_Map_GetVadU = *lib.get(b"VMMDLL_Map_GetVadU")?;
         let VMMDLL_Map_GetVadEx = *lib.get(b"VMMDLL_Map_GetVadEx")?;
@@ -4464,6 +4690,13 @@ fn impl_new<'a>(vmm_lib_path : &str, h_vmm_existing_opt : usize, args: &Vec<&str
         if h_vmm_existing_opt != 0 {
             h = h_vmm_existing_opt;
         } else {
+            let mut args = args.clone();
+            let lc_existing_device : String;
+            if let Some(lc_existing) = lc_existing_opt {
+                lc_existing_device = format!("existing://0x{:x}", lc_existing.native.h);
+                args.push("-device");
+                args.push(lc_existing_device.as_str());
+            }
             let args = args.iter().map(|arg| CString::new(*arg).unwrap()).collect::<Vec<CString>>();
             let argv: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).collect();
             let argc: c_int = args.len() as c_int;
@@ -4514,6 +4747,9 @@ fn impl_new<'a>(vmm_lib_path : &str, h_vmm_existing_opt : usize, args: &Vec<&str
             VMMDLL_ProcessGetProcAddressU,
             VMMDLL_ProcessGetInformation,
             VMMDLL_ProcessGetInformationString,
+            VMMDLL_Map_GetKDeviceU,
+            VMMDLL_Map_GetKDriverU,
+            VMMDLL_Map_GetKObjectU,
             VMMDLL_Map_GetNetU,
             VMMDLL_Map_GetPfnEx,
             VMMDLL_Map_GetPhysMem,
@@ -4534,6 +4770,7 @@ fn impl_new<'a>(vmm_lib_path : &str, h_vmm_existing_opt : usize, args: &Vec<&str
             VMMDLL_Map_GetModuleU,
             VMMDLL_Map_GetPteU,
             VMMDLL_Map_GetThread,
+            VMMDLL_Map_GetThreadCallstackU,
             VMMDLL_Map_GetUnloadedModuleU,
             VMMDLL_Map_GetVadU,
             VMMDLL_Map_GetVadEx,
@@ -4554,6 +4791,19 @@ fn impl_new<'a>(vmm_lib_path : &str, h_vmm_existing_opt : usize, args: &Vec<&str
         };
         return Ok(vmm);
     }
+}
+
+fn impl_new_from_leechcore<'a>(leechcore_existing : &LeechCore, args: &Vec<&str>) -> ResultEx<Vmm<'a>> {
+    // vmm path is assumed to be the same as leechcore path
+    let path_vmm = std::path::Path::new(leechcore_existing.path_lc.as_str()).canonicalize()?;
+    let mut path_vmm = path_vmm.parent().unwrap().canonicalize()?;
+    if cfg!(windows) {
+        path_vmm = path_vmm.join("vmm.dll");
+    } else {
+        path_vmm = path_vmm.join("vmm.so");
+    }
+    let str_path_vmm = path_vmm.to_str().unwrap_or("");
+    return crate::impl_new(str_path_vmm, Some(leechcore_existing), 0, args)
 }
 
 #[allow(non_snake_case)]
@@ -4605,6 +4855,9 @@ const VMMDLL_MAP_HANDLE_VERSION         : u32 = 3;
 const VMMDLL_MAP_HEAP_VERSION           : u32 = 4;
 const VMMDLL_MAP_HEAPALLOC_VERSION      : u32 = 1;
 const VMMDLL_MAP_IAT_VERSION            : u32 = 2;
+const VMMDLL_MAP_KDEVICE_VERSION        : u32 = 1;
+const VMMDLL_MAP_KDRIVER_VERSION        : u32 = 1;
+const VMMDLL_MAP_KOBJECT_VERSION        : u32 = 1;
 const VMMDLL_MAP_POOL_VERSION           : u32 = 2;
 const VMMDLL_MAP_PTE_VERSION            : u32 = 2;
 const VMMDLL_MAP_MODULE_VERSION         : u32 = 6;
@@ -4613,6 +4866,7 @@ const VMMDLL_MAP_PFN_VERSION            : u32 = 1;
 const VMMDLL_MAP_PHYSMEM_VERSION        : u32 = 2;
 const VMMDLL_MAP_SERVICE_VERSION        : u32 = 3;
 const VMMDLL_MAP_THREAD_VERSION         : u32 = 4;
+const VMMDLL_MAP_THREAD_CALLSTACK_VERSION : u32 = 1;
 const VMMDLL_MAP_UNLOADEDMODULE_VERSION : u32 = 2;
 const VMMDLL_MAP_USER_VERSION           : u32 = 2;
 const VMMDLL_MAP_VAD_VERSION            : u32 = 6;
@@ -4645,6 +4899,16 @@ impl Drop for Vmm<'_> {
         if self.native.is_close_h {
             (self.native.VMMDLL_Close)(self.native.h);
         }
+    }
+}
+
+impl Clone for Vmm<'_> {
+    fn clone(&self) -> Self {
+        let vmmid = self.get_config(CONFIG_OPT_CORE_VMM_ID).unwrap();
+        let vmmid_str = vmmid.to_string();
+        let vmm_clone_args = ["-create-from-vmmid", &vmmid_str].to_vec();
+        let vmm_clone = Vmm::new(&self.path_vmm, &vmm_clone_args).unwrap();
+        return vmm_clone;
     }
 }
 
@@ -4862,6 +5126,42 @@ impl PartialEq for VmmMapNetEntry {
     }
 }
 
+impl fmt::Display for VmmMapKDeviceEntry {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "VmmMapKDeviceEntry:{:x}:'{}'", self.va, self.device_type_name)
+    }
+}
+
+impl PartialEq for VmmMapKDeviceEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.va == other.va
+    }
+}
+
+impl fmt::Display for VmmMapKDriverEntry {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "VmmMapKDriverEntry::{:x}'{}'", self.va, self.name)
+    }
+}
+
+impl PartialEq for VmmMapKDriverEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.va == other.va
+    }
+}
+
+impl fmt::Display for VmmMapKObjectEntry {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "VmmMapKObjectEntry:{:x}:{}:'{}'", self.va, self.object_type, self.name)
+    }
+}
+
+impl PartialEq for VmmMapKObjectEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.va == other.va
+    }
+}
+
 impl fmt::Display for VmmMapPoolEntry {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "VmmMapPoolEntry:'{}':{:x}", self.tag_to_string(), self.va)
@@ -4965,6 +5265,77 @@ struct CMemoryMap {
     cMap : u32,
     _Reserved2 : u32,
     pMap : CMemoryMapEntry,
+}
+
+#[repr(C)]
+#[allow(non_snake_case)]
+struct CKDeviceEntry {
+    va : u64,
+    iDepth : u32,
+    dwDeviceType : u32,
+    uszDeviceType : *const c_char,
+    vaDriverObject : u64,
+    vaAttachedDevice : u64,
+    vaFileSystemDevice : u64,
+    uszVolumeInfo : *const c_char,
+}
+
+#[repr(C)]
+#[allow(non_snake_case)]
+struct CKDeviceMap {
+    dwVersion : u32,
+    _Reserved1 : [u32; 5],
+    pbMultiText : *const c_char,
+    cbMultiText : u32,
+    cMap : u32,
+    pMap : CKDeviceEntry,
+}
+
+#[repr(C)]
+#[allow(non_snake_case)]
+struct CKDriverEntry {
+    va : u64,
+    vaDriverStart : u64,
+    cbDriverSize : u64,
+    vaDeviceObject : u64,
+    uszName : *const c_char,
+    uszPath : *const c_char,
+    uszServiceKeyName : *const c_char,
+    MajorFunction : [u64; 28],
+}
+
+#[repr(C)]
+#[allow(non_snake_case)]
+struct CKDriverMap {
+    dwVersion : u32,
+    _Reserved1 : [u32; 5],
+    pbMultiText : *const c_char,
+    cbMultiText : u32,
+    cMap : u32,
+    pMap : CKDriverEntry,
+}
+
+#[repr(C)]
+#[allow(non_snake_case)]
+struct CKObjectEntry {
+    va : u64,
+    vaParent : u64,
+    _Filler : u32,
+    cvaChild : u32,
+    pvaChild : *const u64,
+    uszName : *const c_char,
+    uszType : *const c_char,
+}
+
+#[repr(C)]
+#[allow(non_snake_case)]
+struct CKObjectMap {
+    dwVersion : u32,
+    _Reserved1 : [u32; 5],
+    pbMultiText : *const c_char,
+    cbMultiText : u32,
+    cMap : u32,
+    pMap : CKObjectEntry,
 }
 
 #[repr(C)]
@@ -5317,6 +5688,120 @@ impl Vmm<'_> {
                     filetime : ne.ftTime,
                     pool_tag : ne.dwPoolTag,
                     desc : cstr_to_string(ne.uszText),
+                };
+                result.push(e);
+            }
+            (self.native.VMMDLL_MemFree)(structs as usize);
+            return Ok(result);
+        }
+    }
+
+    fn impl_map_kdevice(&self) -> ResultEx<Vec<VmmMapKDeviceEntry>> {
+        unsafe {
+            let mut structs = std::ptr::null_mut();
+            let r = (self.native.VMMDLL_Map_GetKDeviceU)(self.native.h, &mut structs);
+            if !r {
+                return Err(anyhow!("VMMDLL_Map_GetKDeviceU: fail."));
+            }
+            if (*structs).dwVersion != VMMDLL_MAP_KDEVICE_VERSION {
+                (self.native.VMMDLL_MemFree)(structs as usize);
+                return Err(anyhow!("VMMDLL_Map_GetKDeviceU: bad version [{} != {}].", (*structs).dwVersion, VMMDLL_MAP_KDEVICE_VERSION));
+            }
+            let mut result = Vec::new();
+            if (*structs).cMap == 0 {
+                (self.native.VMMDLL_MemFree)(structs as usize);
+                return Ok(result);
+            }
+            let cMap : usize = (*structs).cMap.try_into()?;
+            let pMap = std::slice::from_raw_parts(&(*structs).pMap, cMap);
+            for i in 0..cMap {
+                let ne = &pMap[i];
+                let e = VmmMapKDeviceEntry {
+                    va : ne.va,
+                    depth : ne.iDepth,
+                    device_type : ne.dwDeviceType,
+                    device_type_name : cstr_to_string(ne.uszDeviceType),
+                    va_driver_object : ne.vaDriverObject,
+                    va_attached_device : ne.vaAttachedDevice,
+                    va_file_system_device : ne.vaFileSystemDevice,
+                    volume_info : cstr_to_string(ne.uszVolumeInfo),
+                };
+                result.push(e);
+            }
+            (self.native.VMMDLL_MemFree)(structs as usize);
+            return Ok(result);
+        }
+    }
+
+    fn impl_map_kdriver(&self) -> ResultEx<Vec<VmmMapKDriverEntry>> {
+        unsafe {
+            let mut structs = std::ptr::null_mut();
+            let r = (self.native.VMMDLL_Map_GetKDriverU)(self.native.h, &mut structs);
+            if !r {
+                return Err(anyhow!("VMMDLL_Map_GetKDriverU: fail."));
+            }
+            if (*structs).dwVersion != VMMDLL_MAP_KDRIVER_VERSION {
+                (self.native.VMMDLL_MemFree)(structs as usize);
+                return Err(anyhow!("VMMDLL_Map_GetKDriverU: bad version [{} != {}].", (*structs).dwVersion, VMMDLL_MAP_KDRIVER_VERSION));
+            }
+            let mut result = Vec::new();
+            if (*structs).cMap == 0 {
+                (self.native.VMMDLL_MemFree)(structs as usize);
+                return Ok(result);
+            }
+            let cMap : usize = (*structs).cMap.try_into()?;
+            let pMap = std::slice::from_raw_parts(&(*structs).pMap, cMap);
+            for i in 0..cMap {
+                let ne = &pMap[i];
+                let e = VmmMapKDriverEntry {
+                    va : ne.va,
+                    va_driver_start : ne.vaDriverStart,
+                    cb_driver_size : ne.cbDriverSize,
+                    va_device_object : ne.vaDeviceObject,
+                    name : cstr_to_string(ne.uszName),
+                    path : cstr_to_string(ne.uszPath),
+                    service_key_name : cstr_to_string(ne.uszServiceKeyName),
+                    major_function : ne.MajorFunction,
+                };
+                result.push(e);
+            }
+            (self.native.VMMDLL_MemFree)(structs as usize);
+            return Ok(result);
+        }
+    }
+
+    fn impl_map_kobject(&self) -> ResultEx<Vec<VmmMapKObjectEntry>> {
+        unsafe {
+            let mut structs = std::ptr::null_mut();
+            let r = (self.native.VMMDLL_Map_GetKObjectU)(self.native.h, &mut structs);
+            if !r {
+                return Err(anyhow!("VMMDLL_Map_GetKObjectU: fail."));
+            }
+            if (*structs).dwVersion != VMMDLL_MAP_KOBJECT_VERSION {
+                (self.native.VMMDLL_MemFree)(structs as usize);
+                return Err(anyhow!("VMMDLL_Map_GetKObjectU: bad version [{} != {}].", (*structs).dwVersion, VMMDLL_MAP_KOBJECT_VERSION));
+            }
+            let mut result = Vec::new();
+            if (*structs).cMap == 0 {
+                (self.native.VMMDLL_MemFree)(structs as usize);
+                return Ok(result);
+            }
+            let cMap : usize = (*structs).cMap.try_into()?;
+            let pMap = std::slice::from_raw_parts(&(*structs).pMap, cMap);
+            for i in 0..cMap {
+                let ne = &pMap[i];
+                let mut child_vec = Vec::new();
+                let child_count = ne.cvaChild as usize;
+                let child_ptr = std::slice::from_raw_parts(ne.pvaChild, ne.cvaChild as usize);
+                for j in 0..child_count {
+                    child_vec.push(child_ptr[j]);
+                }
+                let e = VmmMapKObjectEntry {
+                    va : ne.va,
+                    va_parent : ne.vaParent,
+                    children : child_vec,
+                    name : cstr_to_string(ne.uszName),
+                    object_type : cstr_to_string(ne.uszType),
                 };
                 result.push(e);
             }
@@ -6135,6 +6620,12 @@ impl fmt::Display for VmmProcessMapThreadEntry {
     }
 }
 
+impl fmt::Display for VmmProcessMapThreadCallstackEntry {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "VmmProcessMapThreadEntry:{}:{}:{:02x}:{:016x}:{:016x}:[{}!{}+{:x}]", self.pid & 0x7fffffff, self.tid, self.i, self.va_rsp, self.va_ret_addr, self.module, self.function, self.displacement)
+    }
+}
+
 impl fmt::Display for VmmProcessMapUnloadedModuleEntry {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "VmmProcessMapUnloadedModuleEntry:{}:{:x}:[{}]", self.pid & 0x7fffffff, self.va_base, self.name)
@@ -6517,6 +7008,35 @@ struct CThreadMap {
     _Reserved1 : [u32; 8],
     cMap : u32,
     pMap : CThreadEntry,
+}
+
+#[repr(C)]
+#[allow(non_snake_case)]
+struct CThreadCallstackEntry {
+    i : u32,
+    fRegPresent : bool,
+    vaRetAddr : u64,
+    vaRSP : u64,
+    vaBaseSP : u64,
+    _FutureUse1 : u32,
+    cbDisplacement : i32,
+    uszModule : *const c_char,
+    uszFunction : *const c_char,
+}
+
+#[repr(C)]
+#[allow(non_snake_case)]
+struct CThreadCallstackMap {
+    dwVersion : u32,
+    _Reserved1 : [u32; 6],
+    dwPID : u32,
+    dwTID : u32,
+    cbText : u32,
+    uszText : *const c_char,
+    pbMultiText : *const c_char,
+    cbMultiText : u32,
+    cMap : u32,
+    pMap : CThreadCallstackEntry,
 }
 
 #[repr(C)]
@@ -7042,6 +7562,45 @@ impl VmmProcess<'_> {
                     kernel_time : ne.dwKernelTime,
                     suspend_count : ne.bSuspendCount,
                     wait_reason : ne.bWaitReason
+                };
+                result.push(e);
+            }
+            (self.vmm.native.VMMDLL_MemFree)(structs as usize);
+            return Ok(result);
+        }
+    }
+
+    fn impl_map_thread_callstack(&self, tid : u32, flags : u32) -> ResultEx<Vec<VmmProcessMapThreadCallstackEntry>> {
+        unsafe {
+            let mut structs = std::ptr::null_mut();
+            let r = (self.vmm.native.VMMDLL_Map_GetThreadCallstackU)(self.vmm.native.h, self.pid, tid, flags, &mut structs);
+            if !r {
+                return Err(anyhow!("VMMDLL_Map_GetThreadCallstackU: fail."));
+            }
+            if (*structs).dwVersion != VMMDLL_MAP_THREAD_CALLSTACK_VERSION {
+                (self.vmm.native.VMMDLL_MemFree)(structs as usize);
+                return Err(anyhow!("VMMDLL_Map_GetThreadCallstackU: bad version [{} != {}].", (*structs).dwVersion, VMMDLL_MAP_THREAD_CALLSTACK_VERSION));
+            }
+            let mut result = Vec::new();
+            if (*structs).cMap == 0 {
+                (self.vmm.native.VMMDLL_MemFree)(structs as usize);
+                return Ok(result);
+            }
+            let cMap : usize = (*structs).cMap.try_into()?;
+            let pMap = std::slice::from_raw_parts(&(*structs).pMap, cMap);
+            for i in 0..cMap {
+                let ne = &pMap[i];
+                let e = VmmProcessMapThreadCallstackEntry {
+                    pid : self.pid,
+                    tid : tid,
+                    i : ne.i,
+                    is_reg_present : ne.fRegPresent,
+                    va_ret_addr : ne.vaRetAddr,
+                    va_rsp : ne.vaRSP,
+                    va_base_sp : ne.vaBaseSP,
+                    displacement : ne.cbDisplacement,
+                    module : cstr_to_string(ne.uszModule),
+                    function : cstr_to_string(ne.uszFunction),
                 };
                 result.push(e);
             }
@@ -7977,7 +8536,7 @@ impl<T> VmmPluginInitializationContext<T> {
             let pathname_len = std::cmp::min(pathname_bytes.len(), (*reginfo).reg_info_uszPathName.len());
             // "initialize" rust vmm context from handle and create rust plugin native context:
             let c_path_vmm = CStr::from_ptr((*reginfo).uszPathVmmDLL);
-            let vmm = impl_new(c_path_vmm.to_str()?, self.h_vmm, &Vec::new())?;
+            let vmm = impl_new(c_path_vmm.to_str()?, None, self.h_vmm, &Vec::new())?;
             let ctx_user = self.ctx.unwrap();
             let ctx_rust = VmmPluginContext {
                 vmm : vmm,
@@ -8234,6 +8793,14 @@ impl Drop for LeechCore {
     }
 }
 
+impl Clone for LeechCore {
+    fn clone(&self) -> Self {
+        let lc_init_arg = format!("existing://0x{:x}", self.native.h);
+        let lc_clone = LeechCore::new(&self.path_lc, &lc_init_arg, 0).unwrap();
+        return lc_clone;
+    }
+}
+
 impl<T> Drop for LcBarContext<'_, T> {
     fn drop(&mut self) {
         let mut native_ctx : usize = 0;
@@ -8279,9 +8846,9 @@ impl LeechCore {
         unsafe {
             // load LeechCore native library (leechcore.dll / leechcore.so):
             let path = std::path::Path::new(lc_lib_path).canonicalize()?;
-            let str_path = path.to_str().unwrap_or("");
-            let library_lc : libloading::Library = libloading::Library::new(str_path)
-                .with_context(|| format!("Failed to load leechcore library at: {}", str_path))?;
+            let str_path_lc = path.to_str().unwrap_or("");
+            let library_lc : libloading::Library = libloading::Library::new(str_path_lc)
+                .with_context(|| format!("Failed to load leechcore library at: {}", str_path_lc))?;
             // fetch function references:
             let LcCreate : extern "C" fn(pLcCreateConfig : *mut CLC_CONFIG) -> usize = *library_lc.get(b"LcCreate")?;
             let LcClose = *library_lc.get(b"LcClose")?;
@@ -8334,6 +8901,7 @@ impl LeechCore {
                 LcCommandPtr,
             };
             let lc = LeechCore {
+                path_lc : str_path_lc.to_string(),
                 native,
             };
             return Ok(lc);

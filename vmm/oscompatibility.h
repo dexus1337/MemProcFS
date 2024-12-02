@@ -28,6 +28,10 @@ int LZ4_decompress_safe(const char *src, char *dst, int compressedSize, int dstC
 #define VMM_32BIT
 #endif /* _WIN64 */
 
+#ifdef _M_ARM64
+#define __lzcnt(v)                          (_CountLeadingZeros(v))
+#endif /* _M_ARM64 */
+
 #endif /* _WIN32 */
 #ifdef LINUX
 #define _FILE_OFFSET_BITS 64
@@ -186,6 +190,7 @@ typedef int(*_CoreCrtNonSecureSearchSortCompareFunction)(void const *, void cons
 #define _rotr16(v,c)                        ((((WORD)v) >> ((WORD)c) | (WORD)((WORD)v) << (16 - (WORD)c)))
 #define _rotr64(v,c)                        ((((QWORD)v) >> ((QWORD)c) | (QWORD)((QWORD)v) << (64 - (QWORD)c)))
 #define _rotl64(v,c)                        ((QWORD)(((QWORD)v) << ((QWORD)c)) | (((QWORD)v) >> (64 - (QWORD)c)))
+#define __lzcnt(v)                          (__builtin_clz(v))
 #define _countof(_Array)                    (sizeof(_Array) / sizeof(_Array[0]))
 #define sprintf_s(s, maxcount, ...)         (snprintf(s, maxcount, __VA_ARGS__))
 #define strnlen_s(s, maxcount)              (strnlen(s, maxcount))
@@ -272,6 +277,7 @@ VOID GetLocalTime(LPSYSTEMTIME lpSystemTime);
 DWORD InterlockedAdd(DWORD *Addend, DWORD Value);
 BOOL GetExitCodeThread(_In_ HANDLE hThread, _Out_ LPDWORD lpExitCode);
 BOOL FileTimeToSystemTime(_In_ PFILETIME lpFileTime, _Out_ PSYSTEMTIME lpSystemTime);
+BOOL SystemTimeToFileTime(_In_ PSYSTEMTIME lpSystemTime, _Out_ PFILETIME lpFileTime);
 VOID GetSystemTimeAsFileTime(PFILETIME lpSystemTimeAsFileTime);
 errno_t tmpnam_s(char *_Buffer, ssize_t _Size);
 
