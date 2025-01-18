@@ -2,8 +2,8 @@
 //!
 //! The MemProcFS crate contains a wrapper API around the [MemProcFS physical
 //! memory analysis framework](https://github.com/ufrisk/MemProcFS). The native
-//! libray in the form of `vmm.dll` or `vmm.so` must be downloaded or compiled
-//! in order to make use of the memprocfs crate.
+//! library in the form of `vmm.dll`, `vmm.dylib`, `vmm.so` must be downloaded
+//! or compiled in order to make use of the memprocfs crate.
 //! 
 //! Physical memory analysis may take place on memory dump files for forensic
 //! purposes. Analysis may also take place on live memory - either captured by
@@ -543,7 +543,7 @@ impl Vmm<'_> {
     /// 
     /// 
     /// # Arguments
-    /// * `vmm_lib_path` - Full path to the native vmm library - i.e. `vmm.dll` or `vmm.so`.
+    /// * `vmm_lib_path` - Full path to the native vmm library - i.e. `vmm.dll`,  `vmm.so` or `vmm.dylib` depending on platform.
     /// * `args` - MemProcFS command line arguments as a Vec<&str>.
     /// 
     /// MemProcFS command line argument documentation is found on the [MemProcFS wiki](https://github.com/ufrisk/MemProcFS/wiki/_CommandLine).
@@ -1003,6 +1003,36 @@ impl Vmm<'_> {
         return self.impl_mem_read(u32::MAX, pa, size, flags);
     }
 
+    /// Read a contigious physical memory chunk with flags into a pre-existing buffer.
+    /// 
+    /// Flags are constants named `FLAG_*`
+    /// 
+    /// Reading many memory chunks individually may be slow, especially if
+    /// reading takes place using hardware FPGA devices. In that case it's
+    /// better to use the `mem_scatter()` functionality for better performance.
+    /// 
+    /// 
+    /// # Arguments
+    /// * `pa` - Physical address to start reading from.
+    /// * `flags` - Any combination of `FLAG_*`.
+    /// * `data` - Pre-allocated buffer to read into.
+    /// 
+    /// # Examples
+    /// ```
+    /// // Read 0x100 bytes of data starting at address 0x1000.
+    /// // Force reading the underlying memory device (skip data cache) and
+    /// // Zero-Pad if parts of the memory read fail instead of failing.
+    /// // Example assumes: use pretty_hex::*;
+    /// let mut data = [0u8; 0x100];
+    /// if let Ok(length) = vmm.mem_read_into(0x1000, FLAG_NOCACHE | FLAG_ZEROPAD_ON_FAIL, &mut data) {
+    ///     println!("bytes_read: {length}");
+    ///     println!("{:?}", data.hex_dump());
+    /// }
+    /// ```
+    pub fn mem_read_into(&self, pa : u64, flags : u64, data : &mut [u8]) -> ResultEx<usize> {
+        return self.impl_mem_read_into(u32::MAX, pa, flags, data);
+    }
+
     /// Read a contigious physical memory chunk with flags as a type/struct.
     /// 
     /// Flags are constants named `FLAG_*`
@@ -1065,7 +1095,7 @@ impl Vmm<'_> {
     /// let data_to_write = [0x56u8, 0x4d, 0x4d, 0x52, 0x55, 0x53, 0x54].to_vec();
     /// let _r = vmm.mem_write(0x1000, &data_to_write);
     /// ```
-    pub fn mem_write(&self, pa : u64, data : &Vec<u8>) -> ResultEx<()> {
+    pub fn mem_write(&self, pa : u64, data : &[u8]) -> ResultEx<()> {
         return self.impl_mem_write(u32::MAX, pa, data);
     }
 
@@ -1151,7 +1181,7 @@ impl Vmm<'_> {
     /// vmm.vfs_write("/conf/config_process_show_terminated.txt", vfs_write_data, 0);
     /// ```
     pub fn vfs_write(&self, filename : &str, data : Vec<u8>, offset : u64) {
-        return self.impl_vfs_write(filename, data, offset);
+        return self.impl_vfs_write(filename, &data, offset);
     }
 
     /// Retrieve all registry hives.
@@ -1363,9 +1393,9 @@ impl VmmKernel<'_> {
 
 /// Debug Symbol API.
 /// 
-/// The PDB sub-system requires that MemProcFS supporting DLLs/.SO's for
-/// debugging and symbol server are put alongside `vmm.dll`. Also it's
-/// recommended that the file `info.db` is put alongside `vmm.dll`.
+/// The PDB sub-system requires that MemProcFS supporting DLLs/.DYLIBs/.SOs for
+/// debugging and symbol server are put alongside `vmm.dll`.
+/// Also it's recommended that the file `info.db` is put alongside `vmm.dll`.
 /// 
 /// 
 /// # Created By
@@ -1625,7 +1655,7 @@ impl VmmScatterMemory<'_> {
     /// # Arguments
     /// * `va` - Address to prepare to write to.
     /// * `data` - Data to write.
-    pub fn prepare_write(&self, va : u64, data : &Vec<u8>) -> ResultEx<()> {
+    pub fn prepare_write(&self, va : u64, data : &[u8]) -> ResultEx<()> {
         return self.impl_prepare_write(va, data);
     }
 
@@ -1658,6 +1688,11 @@ impl VmmScatterMemory<'_> {
     /// Read memory prepared after the `execute()` call.
     pub fn read_as<T>(&self, va : u64) -> ResultEx<T> {
         return self.impl_read_as(va);
+    }
+
+    /// Read memory prepared after the `execute()` call.
+    pub fn read_into(&self, va : u64, data : &mut [u8]) -> ResultEx<usize> {
+        return self.impl_read_into(va, data);
     }
 
     /// Clear the scatter memory for additional read/writes.
@@ -2685,6 +2720,36 @@ impl VmmProcess<'_> {
         return self.vmm.impl_mem_read(self.pid, va, size, flags);
     }
 
+    /// Read a contigious virtual memory chunk with flags into a pre-existing buffer.
+    /// 
+    /// Flags are constants named `FLAG_*`
+    /// 
+    /// Reading many memory chunks individually may be slow, especially if
+    /// reading takes place using hardware FPGA devices. In that case it's
+    /// better to use the `mem_scatter()` functionality for better performance.
+    /// 
+    /// 
+    /// # Arguments
+    /// * `va` - Virtual address to start reading from.
+    /// * `flags` - Any combination of `FLAG_*`.
+    /// * `data` - Pre-allocated buffer to read into.
+    /// 
+    /// # Examples
+    /// ```
+    /// // Read 0x100 bytes of data from the base of kernel32.
+    /// // Force reading the underlying memory device (skip data cache) and
+    /// // Zero-Pad if parts of the memory read fail instead of failing.
+    /// // Example assumes: use pretty_hex::*;
+    /// let mut data = [0u8; 0x100];
+    /// if let Ok(length) = vmmprocess.mem_read_into(va_kernel32, FLAG_NOCACHE | FLAG_ZEROPAD_ON_FAIL, &mut data) {
+    ///     println!("bytes_read: {length}");
+    ///     println!("{:?}", data.hex_dump());
+    /// }
+    /// ```
+    pub fn mem_read_into(&self, va : u64, flags : u64, data : &mut [u8]) -> ResultEx<usize> {
+        return self.vmm.impl_mem_read_into(self.pid, va, flags, data);
+    }
+
     /// Read a contigious virtual memory chunk with flags as a type/struct.
     /// 
     /// Flags are constants named `FLAG_*`
@@ -2764,7 +2829,7 @@ impl VmmProcess<'_> {
     /// let data_to_write = [0x56u8, 0x4d, 0x4d, 0x52, 0x55, 0x53, 0x54].to_vec();
     /// let _r = vmmprocess.mem_write(va_kernel32, &data_to_write);
     /// ```
-    pub fn mem_write(&self, va : u64, data : &Vec<u8>) -> ResultEx<()> {
+    pub fn mem_write(&self, va : u64, data : &[u8]) -> ResultEx<()> {
         return self.vmm.impl_mem_write(self.pid, va, data);
     }
 
@@ -2951,7 +3016,7 @@ impl VmmRegHive<'_> {
     /// let data_to_write = [0x56u8, 0x4d, 0x4d, 0x52, 0x55, 0x53, 0x54].to_vec();
     /// let _r = hive.reg_hive_write(0x1000, &data_to_write);
     /// ```
-    pub fn reg_hive_write(&self, ra : u32, data : &Vec<u8>) -> ResultEx<()> {
+    pub fn reg_hive_write(&self, ra : u32, data : &[u8]) -> ResultEx<()> {
         return self.impl_reg_hive_write(ra, data);
     }
 }
@@ -4077,7 +4142,7 @@ impl LeechCore {
     /// device PCIe BAR.
     /// 
     /// # Arguments
-    /// * `lc_lib_path` - Full path to the native leechcore library - i.e. `leechcore.dll` or `leechcore.so`.
+    /// * `lc_lib_path` - Full path to the native leechcore library - i.e. `leechcore.dll`, `leechcore.dylib` or `leechcore.so`.
     /// * `device_config` - Leechcore device connection string, i.e. `fpga://algo=0`.
     /// * `lc_config_printf_verbosity` - Leechcore printf verbosity level as a combination of `LeechCore::LC_CONFIG_PRINTF_*` values.
     /// 
@@ -4105,7 +4170,7 @@ impl LeechCore {
     /// device PCIe BAR.
     /// 
     /// # Arguments
-    /// * `lc_lib_path` - Full path to the native leechcore library - i.e. `leechcore.dll` or `leechcore.so`.
+    /// * `lc_lib_path` - Full path to the native leechcore library - i.e. `leechcore.dll`,  `leechcore.dylib` or `leechcore.so`.
     /// * `device_config` - Leechcore device connection string, i.e. `fpga://algo=0`.
     /// * `lc_config_printf_verbosity` - Leechcore printf verbosity level as a combination of `LeechCore::LC_CONFIG_PRINTF_*` values.
     /// * `remote_config` - Leechcore remote connection string, i.e. blank or ``rpc://...` (Windows only).
@@ -4608,6 +4673,8 @@ fn impl_new<'a>(vmm_lib_path : &str, lc_existing_opt : Option<&LeechCore>, h_vmm
         let mut path_lc = path_vmm.parent().unwrap().canonicalize()?;
         if cfg!(windows) {
             path_lc = path_lc.join("leechcore.dll");
+        } else if cfg!(target_os = "macos") {
+            path_lc = path_lc.join("leechcore.dylib");
         } else {
             path_lc = path_lc.join("leechcore.so");
         }
@@ -4799,6 +4866,8 @@ fn impl_new_from_leechcore<'a>(leechcore_existing : &LeechCore, args: &Vec<&str>
     let mut path_vmm = path_vmm.parent().unwrap().canonicalize()?;
     if cfg!(windows) {
         path_vmm = path_vmm.join("vmm.dll");
+    } else if cfg!(target_os = "macos") {
+        path_vmm = path_vmm.join("vmm.dylib");
     } else {
         path_vmm = path_vmm.join("vmm.so");
     }
@@ -5977,6 +6046,16 @@ impl Vmm<'_> {
         return Ok(pb_result);
     }
 
+    fn impl_mem_read_into(&self, pid : u32, va : u64, flags : u64, data : &mut [u8]) -> ResultEx<usize> {
+        let cb = u32::try_from(data.len())?;
+        let mut cb_read = 0;
+        let r = (self.native.VMMDLL_MemReadEx)(self.native.h, pid, va, data.as_mut_ptr(), cb, &mut cb_read, flags);
+        if !r {
+            return Err(anyhow!("VMMDLL_MemReadEx: fail."));
+        }
+        return Ok(cb_read as usize);
+    }
+
     fn impl_mem_read_as<T>(&self, pid : u32, va : u64, flags : u64) -> ResultEx<T> {
         unsafe {
             let cb = u32::try_from(std::mem::size_of::<T>())?;
@@ -6014,7 +6093,7 @@ impl Vmm<'_> {
         return Ok(pa);
     }
 
-    fn impl_mem_write(&self, pid : u32, va : u64, data : &Vec<u8>) -> ResultEx<()> {
+    fn impl_mem_write(&self, pid : u32, va : u64, data : &[u8]) -> ResultEx<()> {
         let cb = u32::try_from(data.len())?;
         let pb = data.as_ptr();
         let r = (self.native.VMMDLL_MemWrite)(self.native.h, pid, va, pb, cb);
@@ -6064,7 +6143,7 @@ impl Vmm<'_> {
         return Ok(data);
     }
 
-    fn impl_vfs_write(&self, filename : &str, data : Vec<u8>, offset : u64) {
+    fn impl_vfs_write(&self, filename : &str, data : &[u8], offset : u64) {
         if data.len() < u32::MAX as usize {
             let c_filename = CString::new(str::replace(filename, "/", "\\")).unwrap();
             let mut cb_write = 0u32;
@@ -6328,7 +6407,7 @@ impl VmmRegHive<'_> {
         return Ok(pb_result);
     }
 
-    fn impl_reg_hive_write(&self, ra : u32, data : &Vec<u8>) -> ResultEx<()> {
+    fn impl_reg_hive_write(&self, ra : u32, data : &[u8]) -> ResultEx<()> {
         let cb = u32::try_from(data.len())?;
         let pb = data.as_ptr();
         let r = (self.vmm.native.VMMDLL_WinReg_HiveWrite)(self.vmm.native.h, self.va, ra, pb, cb);
@@ -7854,7 +7933,7 @@ impl VmmScatterMemory<'_> {
         return Ok(());
     }
 
-    fn impl_prepare_write(&self, va : u64, data : &Vec<u8>) -> ResultEx<()> {
+    fn impl_prepare_write(&self, va : u64, data : &[u8]) -> ResultEx<()> {
         let cb = u32::try_from(data.len())?;
         let pb = data.as_ptr();
         let r = (self.vmm.native.VMMDLL_Scatter_PrepareWrite)(self.hs, va, pb, cb);
@@ -7903,6 +7982,16 @@ impl VmmScatterMemory<'_> {
             }
             return Ok(result);
         }
+    }
+
+    fn impl_read_into(&self, va : u64, data : &mut [u8]) -> ResultEx<usize> {
+        let cb = u32::try_from(data.len())?;
+        let mut cb_read = 0;
+        let r = (self.vmm.native.VMMDLL_Scatter_Read)(self.hs, va, cb, data.as_mut_ptr(), &mut cb_read);
+        if !r {
+            return Err(anyhow!("VMMDLL_Scatter_Read: fail."));
+        }
+        return Ok(cb_read as usize);
     }
 
     fn impl_clear(&self) -> ResultEx<()> {
@@ -8844,7 +8933,7 @@ impl LeechCore {
     #[allow(non_snake_case)]
     fn impl_new(lc_lib_path : &str, device_config : &str, remote_config : &str, lc_config_printf_verbosity : u32, pa_max : u64) -> ResultEx<LeechCore> {
         unsafe {
-            // load LeechCore native library (leechcore.dll / leechcore.so):
+            // load LeechCore native library (leechcore.[dll|dylib|so]):
             let path = std::path::Path::new(lc_lib_path).canonicalize()?;
             let str_path_lc = path.to_str().unwrap_or("");
             let library_lc : libloading::Library = libloading::Library::new(str_path_lc)
