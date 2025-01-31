@@ -10,7 +10,7 @@
 // The segment heap is reliant on symbols and it will not be possible to parse
 // without symbols.s
 //
-// (c) Ulf Frisk, 2022-2024
+// (c) Ulf Frisk, 2022-2025
 // Author: Ulf Frisk, pcileech@frizk.net
 //
 
@@ -116,6 +116,7 @@ BOOL VmmHeap_GetEntryDecoded(_In_ BOOL f32, _In_ QWORD qwHeapEncoding, _In_ PBYT
     } u;
     if(!f32) { o += 8; }
     u.v = *(PQWORD)(pb + o);
+    if(!u.v) { return FALSE; }
     if(qwHeapEncoding) {
         u.v ^= qwHeapEncoding;
         if(u.pbH[3] != (u.pbH[0] ^ u.pbH[1] ^ u.pbH[2])) { return FALSE; }
@@ -514,11 +515,12 @@ VOID VmmHeapAlloc_SegLFH(_In_ VMM_HANDLE H, _In_ PVMMHEAPNT_CTX ctx, _In_ DWORD 
     UCHAR ucBits;
     PBYTE pbBitmap;
     DWORD iBlock, cBlock, oBlock;
-    DWORD cbBlockSize, oFirstBlock;
+    DWORD cbBlockSize, oFirstBlock, dwvaShift;
     PVMMHEAPALLOC_SEG_LFHENCODED_OFFSETS pEncoded;
     pbBitmap = pb + ctx->po->seg.HEAP_LFH_SUBSEGMENT.BlockBitmap;
     pEncoded = (PVMMHEAPALLOC_SEG_LFHENCODED_OFFSETS)(pb + ctx->po->seg.HEAP_LFH_SUBSEGMENT.BlockOffsets);
-    pEncoded->EncodedData = (DWORD)(pEncoded->EncodedData ^ ctx->dwSegLfhKey ^ ((DWORD)va >> 12));
+    dwvaShift = (H->vmm.kernel.dwVersionBuild >= 26100) ? ((DWORD)(va >> 12)) : ((DWORD)va >> 12);
+    pEncoded->EncodedData = (DWORD)(pEncoded->EncodedData ^ ctx->dwSegLfhKey ^ dwvaShift);
     oFirstBlock = pEncoded->FirstBlockOffset;
     cbBlockSize = pEncoded->BlockSize;
     if((cbBlockSize >= 0xff8) || (oFirstBlock > cb)) { return; }
@@ -607,7 +609,7 @@ VOID VmmHeapAlloc_SegInit(_In_ VMM_HANDLE H, _In_ PVMMHEAPNT_CTX ctx)
                 if(!(pbPgSeg = LocalAlloc(0, cbPgSeg))) { goto fail; }
                 VmmRead2(H, ctx->pProcess, peSegment->va, pbPgSeg, cbPgSeg, VMM_FLAG_ZEROPAD_ON_FAIL);
                 // signature check:
-                vaSignature = VMM_PTR_OFFSET_DUAL(f32, pbPgSeg, 8, 16) ^ peSegment->va ^ ctx->qwSegHeapGbl ^ 0xa2e64eada2e64ead;
+                vaSignature = VMM_PTR_OFFSET_DUAL(f32, pbPgSeg, 8, 16) ^ peSegment->va ^ ctx->qwSegHeapGbl ^ ctx->po->seg.HEAP_PAGE_SEGMENT.qwSignatureStaticKey;
                 iCtx = (DWORD)-1;
                 if(ctx->segctx[0].va == vaSignature) { iCtx = 0; }
                 if(ctx->segctx[1].va == vaSignature) { iCtx = 1; }
@@ -736,6 +738,12 @@ VOID VmmHeapAlloc_NtInitSeg(_In_ VMM_HANDLE H, _In_ PVMMHEAPNT_CTX ctx, _In_ QWO
     while(oEntry < cbSegment - 0x10) {
         vaChunk = vaSegment + oEntry;
         if(!VmmHeap_GetEntryDecoded(ctx->f32, ctx->qwHeapEncoding, pbSegment, oEntry, &eH)) {
+            if(!(vaChunk & 0xfff) && (oEntry + 0x1000 < cbSegment) && !memcmp(pbSegment + oEntry, H->ZERO_PAGE, 0x1000)) {
+                // pages may be zeroed out -> skip to next page.
+                dwPreviousSize = 0;
+                oEntry += 0x1000;
+                continue;
+            }
             VmmLog(H, MID_HEAP, LOGLEVEL_6_TRACE, "FAIL: (CHECKSUM) AT: %llx %x", vaSegment, oEntry);
             break;
         }
@@ -1290,7 +1298,10 @@ int VmmHeap_qsort_SegmentEntry(PVMM_MAP_HEAP_SEGMENTENTRY p1, PVMM_MAP_HEAP_SEGM
 
 int VmmHeap_qsort_HeapEntry(PVMM_MAP_HEAPENTRY p1, PVMM_MAP_HEAPENTRY p2)
 {
-    return (p1->va < p2->va) ? -1 : ((p1->va > p2->va) ? 1 : 0);
+    if(p1->dwHeapNum == p2->dwHeapNum) {
+        return (p1->va < p2->va) ? -1 : ((p1->va > p2->va) ? 1 : 0);
+    }
+    return (p1->dwHeapNum < p2->dwHeapNum) ? -1 : ((p1->dwHeapNum > p2->dwHeapNum) ? 1 : 0);
 }
 
 /*

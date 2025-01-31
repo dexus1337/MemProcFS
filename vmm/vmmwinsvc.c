@@ -1,6 +1,6 @@
 // vmmwinsvc.c : implementation of functionality related to Windows service manager (SCM).
 //
-// (c) Ulf Frisk, 2020-2024
+// (c) Ulf Frisk, 2020-2025
 // Author: Ulf Frisk, pcileech@frizk.net
 //
 #include "vmmwinsvc.h"
@@ -88,6 +88,7 @@ VOID VmmWinSvc_OffsetLocator(_In_ VMM_HANDLE H, _In_ PVMMWINSVC_CONTEXT ctx)
             if(dwBuild >= 16299) { o16.Pid = 0x28; o16.UserTp = 0x20; }
             if(dwBuild >= 18362) { o19.ExtInfo = 0xf0; }
             if(dwBuild >= 19041) { o19.ExtInfo = 0x128; }
+            if(dwBuild >= 26100) { o19._Size = 0x158; o19.SvcStatus = 0x50; o19.ExtInfo = 0x150; }
         } else if(dwBuild >= 9200) {    // WIN 8.0 +
             ctx->fSc19 = TRUE;
             ctx->dwTag = 'sErv';

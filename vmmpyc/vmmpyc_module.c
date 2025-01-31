@@ -1,6 +1,6 @@
 // vmmpyc_module.c : implementation of the modules functionality for vmmpyc.
 //
-// (c) Ulf Frisk, 2021-2024
+// (c) Ulf Frisk, 2021-2025
 // Author: Ulf Frisk, pcileech@frizk.net
 //
 #include "vmmpyc.h"
@@ -40,7 +40,7 @@ static PyObject *
 VmmPycModule_maps(PyObj_Module *self, void *closure)
 {
     if(!self->fValid) { return PyErr_Format(PyExc_RuntimeError, "Module.maps: Not initialized."); }
-    if(!self->pyObjMapsOpt) { (PyObject*)VmmPycModuleMaps_InitializeInternal(self->pyVMM, self->dwPID, self->ModuleEntry.uszText); }
+    if(!self->pyObjMapsOpt) { self->pyObjMapsOpt = (PyObject*)VmmPycModuleMaps_InitializeInternal(self->pyVMM, self->dwPID, self->ModuleEntry.uszText); }
     Py_XINCREF(self->pyObjMapsOpt);
     return self->pyObjMapsOpt;
 }

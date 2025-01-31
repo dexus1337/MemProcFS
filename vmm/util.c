@@ -1,6 +1,6 @@
 // util.c : implementation of various utility functions.
 //
-// (c) Ulf Frisk, 2018-2024
+// (c) Ulf Frisk, 2018-2025
 // Author: Ulf Frisk, pcileech@frizk.net
 //
 #include "util.h"
@@ -557,6 +557,24 @@ VOID Util_FileTime2CSV(_In_ QWORD ft, _Out_writes_(22) LPSTR szTime)
     );
 }
 
+_Success_(return != 0)
+QWORD Util_TimeIso8601ToFileTime(_In_ LPSTR szIso8601)
+{
+    QWORD ft = 0;
+    SYSTEMTIME sSystemTime = { 0 };
+    int iYear = 0, iMonth = 0, iDay = 0, iHour = 0, iMinute = 0, iSecond = 0, iMs = 0, iUs = 0;
+    if(sscanf_s(szIso8601, "%4d-%2d-%2dT%2d:%2d:%2d.%3d%dZ", &iYear, &iMonth, &iDay, &iHour, &iMinute, &iSecond, &iMs, &iUs) != 8) { return 0; }
+    sSystemTime.wYear = (WORD)iYear;
+    sSystemTime.wMonth = (WORD)iMonth;
+    sSystemTime.wDay = (WORD)iDay;
+    sSystemTime.wHour = (WORD)iHour;
+    sSystemTime.wMinute = (WORD)iMinute;
+    sSystemTime.wSecond = (WORD)iSecond;
+    sSystemTime.wMilliseconds = (WORD)iMs;
+    SystemTimeToFileTime(&sSystemTime, (PFILETIME)&ft);
+    return ft;
+}
+
 VOID Util_GuidToString(_In_reads_(16) PBYTE pb, _Out_writes_(37) LPSTR szGUID)
 {
     typedef struct tdGUID {
@@ -959,14 +977,14 @@ VOID Util_GetPathLib(_Out_writes_(MAX_PATH) PCHAR szPath)
     CharUtil_WtoU(wszPath, -1, (PBYTE)szPath, MAX_PATH, NULL, NULL, CHARUTIL_FLAG_STR_BUFONLY | CHARUTIL_FLAG_TRUNCATE);
     if(hModuleVmm) { FreeLibrary(hModuleVmm); }
 #endif /* _WIN32 */
-#ifdef LINUX
+#if defined(LINUX) || defined(MACOS)
     Dl_info Info = { 0 };
     if(!dladdr((void *)Util_GetPathLib, &Info) || !Info.dli_fname) {
         GetModuleFileNameA(NULL, szPath, MAX_PATH - 4);
     } else {
         strncpy(szPath, Info.dli_fname, MAX_PATH - 1);
     }
-#endif /* LINUX */
+#endif /* LINUX || MACOS */
     for(i = strlen(szPath) - 1; i > 0; i--) {
         if(szPath[i] == '/' || szPath[i] == '\\') {
             szPath[i + 1] = '\0';
@@ -1119,7 +1137,7 @@ VOID Util_DeleteFileU(_In_ LPCSTR uszPathFile)
 }
 
 #endif /* _WIN32 */
-#ifdef LINUX
+#if defined(LINUX) || defined(MACOS)
 
 /*
 * SHA256 hash data.
@@ -1151,4 +1169,4 @@ VOID Util_DeleteFileU(_In_ LPCSTR uszPathFile)
 
 DWORD Util_ResourceSize(_In_ VMM_HANDLE H, _In_ LPWSTR wszResourceName) { return 0; }
 NTSTATUS Util_VfsReadFile_FromResource(_In_ VMM_HANDLE H, _In_ LPWSTR wszResourceName, _Out_writes_to_(cb, *pcbRead) PBYTE pb, _In_ DWORD cb, _Out_ PDWORD pcbRead, _In_ QWORD cbOffset) { return VMMDLL_STATUS_FILE_INVALID; }
-#endif /* LINUX */
+#endif /* LINUX || MACOS */

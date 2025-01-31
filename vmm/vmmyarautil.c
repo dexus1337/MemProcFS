@@ -1,6 +1,6 @@
 // vmmyarautil.c : utility api with helper functions around the yara scanner.
 // 
-// (c) Ulf Frisk, 2023-2024
+// (c) Ulf Frisk, 2023-2025
 // Author: Ulf Frisk, pcileech@frizk.net
 //
 #include "vmm.h"
@@ -13,6 +13,10 @@
 // ----------------------------------------------------------------------------
 // PARSE SINGLE RESULT FUNCTIONALITY BELOW:
 // ----------------------------------------------------------------------------
+
+#define VMMYARAUTIL_TEXT_ALLOW \
+    "0000000000000000000000000000000011111111111111111111111111111111" \
+    "1111111111111111111111111111111111111111111111111111111111111110"
 
 typedef struct tdVMMYARAUTILOB_ENTRYPARSECONTEXT {
     OB ObHdr;
@@ -403,7 +407,7 @@ BOOL VmmYaraUtil_ParseSingleResultNext(
         fFirst = TRUE;
         hEPC->usz[0] = 0;
         uszRuleMatchStringBuffer[0] = 0;
-        CharUtil_FixFsName(uszRuleMatchStringBuffer, sizeof(uszRuleMatchStringBuffer), NULL, peMatch->RuleMatch.Strings[i].szString, NULL, -1, 0, FALSE);
+        CharUtil_ReplaceMultiple(uszRuleMatchStringBuffer, sizeof(uszRuleMatchStringBuffer), NULL, peMatch->RuleMatch.Strings[i].szString, NULL, -1, VMMYARAUTIL_TEXT_ALLOW, '_');
         o = _snprintf_s(hEPC->usz, _countof(hEPC->usz), _TRUNCATE, "[%s]:", uszRuleMatchStringBuffer);
         for(j = 0; j < peMatch->RuleMatch.Strings[i].cMatch; j++) {
             o += _snprintf_s(hEPC->usz + o, _countof(hEPC->usz) - o, _TRUNCATE,
@@ -421,7 +425,7 @@ BOOL VmmYaraUtil_ParseSingleResultNext(
                 hEPC->usz[0] = 0;
                 va = peMatch->vaBase + (QWORD)peMatch->RuleMatch.Strings[i].cbMatchOffset[j];
                 uszRuleMatchStringBuffer[0] = 0;
-                CharUtil_FixFsName(uszRuleMatchStringBuffer, sizeof(uszRuleMatchStringBuffer), NULL, peMatch->RuleMatch.Strings[i].szString, NULL, -1, 0, FALSE);
+                CharUtil_ReplaceMultiple(uszRuleMatchStringBuffer, sizeof(uszRuleMatchStringBuffer), NULL, peMatch->RuleMatch.Strings[i].szString, NULL, -1, VMMYARAUTIL_TEXT_ALLOW, '_');
                 o = _snprintf_s(hEPC->usz, _countof(hEPC->usz), _TRUNCATE, "[%s] %llx:\n", uszRuleMatchStringBuffer, va);
                 vaAlign = (max(va, 0x40) - 0x40) & ~0xf;
                 VmmReadEx(H, pObProcess, vaAlign, pbBuffer, sizeof(pbBuffer), &cbRead, VMM_FLAG_ZEROPAD_ON_FAIL);

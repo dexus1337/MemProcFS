@@ -1,6 +1,6 @@
 // oscompatibility.h : VMM Windows/Linux compatibility layer.
 //
-// (c) Ulf Frisk, 2021-2024
+// (c) Ulf Frisk, 2021-2025
 // Author: Ulf Frisk, pcileech@frizk.net
 //
 #ifndef __OSCOMPATIBILITY_H__
@@ -27,8 +27,22 @@ _Ret_maybenull_ HMODULE WINAPI LoadLibraryU(_In_ LPCSTR lpLibFileName);
 #define VMM_32BIT
 #endif /* _WIN64 */
 
+#ifdef _M_ARM64
+#define __lzcnt(v)                          (_CountLeadingZeros(v))
+#endif /* _M_ARM64 */
+
 #endif /* _WIN32 */
+
 #ifdef LINUX
+#define VMM_LIBRARY_FILETYPE                ".so"
+#endif /* LINUX */
+
+#ifdef MACOS
+#define VMM_LIBRARY_FILETYPE                ".dylib"
+#endif /* MACOS */
+
+#if defined(LINUX) || defined(MACOS)
+#define _FILE_OFFSET_BITS 64
 
 #if __SIZEOF_POINTER__ == 8
 #define VMM_64BIT
@@ -36,7 +50,6 @@ _Ret_maybenull_ HMODULE WINAPI LoadLibraryU(_In_ LPCSTR lpLibFileName);
 #define VMM_32BIT
 #endif /* __SIZEOF_POINTER__ */
 
-#include <byteswap.h>
 #include <ctype.h>
 #include <dirent.h>
 #include <dlfcn.h>
@@ -51,15 +64,12 @@ _Ret_maybenull_ HMODULE WINAPI LoadLibraryU(_In_ LPCSTR lpLibFileName);
 #include <pthread.h>
 #include <time.h>
 #include <unistd.h>
-#include <sys/eventfd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #undef  AF_INET6
 #define AF_INET6 23
-
-#define VMM_LIBRARY_FILETYPE                ".so"
 
 typedef void                                VOID, *PVOID, *LPVOID;
 typedef void                                *HANDLE, **PHANDLE, *HMODULE, *FARPROC;
@@ -118,6 +128,11 @@ typedef int(*_CoreCrtNonSecureSearchSortCompareFunction)(void const *, void cons
 #define WAIT_OBJECT_0                       (0x00000000UL)
 #define INFINITE                            (0xFFFFFFFFUL)
 #define MAXIMUM_WAIT_OBJECTS                64
+#define WAIT_OBJECT_0                       (0x00000000UL)
+#define WAIT_FAILED                         (0xFFFFFFFFUL)
+#define WAIT_TIMEOUT                        (258L)
+#define INFINITE                            (0xFFFFFFFFUL)
+#define MAXIMUM_WAIT_OBJECTS                64
 #define SID_MAX_SUB_AUTHORITIES             (15)
 #define SECURITY_MAX_SID_SIZE               (sizeof(SID) - sizeof(DWORD) + (SID_MAX_SUB_AUTHORITIES * sizeof(DWORD)))
 #define CP_ACP                              0
@@ -174,15 +189,16 @@ typedef int(*_CoreCrtNonSecureSearchSortCompareFunction)(void const *, void cons
 
 #define max(a, b)                           (((a) > (b)) ? (a) : (b))
 #define min(a, b)                           (((a) < (b)) ? (a) : (b))
-#define _byteswap_ushort(v)                 (bswap_16(v))
-#define _byteswap_ulong(v)                  (bswap_32(v))
-#define _byteswap_uint64(v)                 (bswap_64(v))
+#define _byteswap_ushort(v)                 (__builtin_bswap16(v))
+#define _byteswap_ulong(v)                  (__builtin_bswap32(v))
+#define _byteswap_uint64(v)                 (__builtin_bswap64(v))
 #ifndef _rotr
 #define _rotr(v,c)                          ((((DWORD)v) >> ((DWORD)c) | (DWORD)((DWORD)v) << (32 - (DWORD)c)))
 #endif /* _rotr */
 #define _rotr16(v,c)                        ((((WORD)v) >> ((WORD)c) | (WORD)((WORD)v) << (16 - (WORD)c)))
 #define _rotr64(v,c)                        ((((QWORD)v) >> ((QWORD)c) | (QWORD)((QWORD)v) << (64 - (QWORD)c)))
 #define _rotl64(v,c)                        ((QWORD)(((QWORD)v) << ((QWORD)c)) | (((QWORD)v) >> (64 - (QWORD)c)))
+#define __lzcnt(v)                          (__builtin_clz(v))
 #define _countof(_Array)                    (sizeof(_Array) / sizeof(_Array[0]))
 #define sprintf_s(s, maxcount, ...)         (snprintf(s, maxcount, __VA_ARGS__))
 #define strnlen_s(s, maxcount)              (strnlen(s, maxcount))
@@ -201,10 +217,10 @@ typedef int(*_CoreCrtNonSecureSearchSortCompareFunction)(void const *, void cons
 #define ExitProcess(c)                      (exit(c ? EXIT_SUCCESS : EXIT_FAILURE))
 #define Sleep(dwMilliseconds)               (usleep(1000*dwMilliseconds))
 #define _fsopen(szFile, szMode, dwAttr)     fopen(szFile, szMode)
-#define fopen_s(ppFile, szFile, szAttr)     ((*ppFile = fopen64(szFile, szAttr)) ? 0 : 1)
+#define fopen_s(ppFile, szFile, szAttr)     ((*ppFile = fopen(szFile, szAttr)) ? 0 : 1)
 #define ZeroMemory(pb, cb)                  (memset(pb, 0, cb))
-#define _ftelli64(f)                        (ftello64(f))
-#define _fseeki64(f, o, w)                  (fseeko64(f, o, w))
+#define _ftelli64(f)                        (ftello(f))
+#define _fseeki64(f, o, w)                  (fseeko(f, o, w))
 #define _chsize_s(fd, cb)                   (ftruncate64(fd, cb))
 #define _fileno(f)                          (fileno(f))
 #define InterlockedAdd64(p, v)              (__sync_add_and_fetch_8(p, v))
@@ -269,6 +285,7 @@ VOID GetLocalTime(LPSYSTEMTIME lpSystemTime);
 DWORD InterlockedAdd(DWORD *Addend, DWORD Value);
 BOOL GetExitCodeThread(_In_ HANDLE hThread, _Out_ LPDWORD lpExitCode);
 BOOL FileTimeToSystemTime(_In_ PFILETIME lpFileTime, _Out_ PSYSTEMTIME lpSystemTime);
+BOOL SystemTimeToFileTime(_In_ PSYSTEMTIME lpSystemTime, _Out_ PFILETIME lpFileTime);
 VOID GetSystemTimeAsFileTime(PFILETIME lpSystemTimeAsFileTime);
 errno_t tmpnam_s(char *_Buffer, ssize_t _Size);
 
@@ -594,13 +611,24 @@ typedef LIST_ENTRY64 *PLIST_ENTRY64;
 
 
 // SRWLOCK
-typedef struct tdSRWLOCK {
-    uint32_t xchg;
-    int c;
-} SRWLOCK, *PSRWLOCK;
-VOID InitializeSRWLock(PSRWLOCK SRWLock);
-VOID AcquireSRWLockExclusive(_Inout_ PSRWLOCK SRWLock);
-VOID ReleaseSRWLockExclusive(_Inout_ PSRWLOCK SRWLock);
+#ifdef LINUX
+    typedef struct tdSRWLOCK {
+        uint32_t xchg;
+        int c;
+    } SRWLOCK, *PSRWLOCK;
+#endif /* LINUX */
+#ifdef MACOS
+    #include <dispatch/dispatch.h>
+    typedef struct tdSRWLOCK {
+        union {
+            QWORD valid;
+            dispatch_semaphore_t sem;
+        };
+    } SRWLOCK, *PSRWLOCK;
+#endif /* MACOS */
+VOID InitializeSRWLock(PSRWLOCK pSRWLock);
+VOID AcquireSRWLockExclusive(_Inout_ PSRWLOCK pSRWLock);
+VOID ReleaseSRWLockExclusive(_Inout_ PSRWLOCK pSRWLock);
 #define AcquireSRWLockShared    AcquireSRWLockExclusive
 #define ReleaseSRWLockShared    ReleaseSRWLockExclusive
 #define SRWLOCK_INIT            { 0 }
@@ -626,7 +654,7 @@ USHORT QueryDepthSList(PSLIST_HEADER ListHead);
 PSLIST_ENTRY InterlockedPopEntrySList(_Inout_ PSLIST_HEADER ListHead);
 PSLIST_ENTRY InterlockedPushEntrySList(_Inout_ PSLIST_HEADER ListHead, _Inout_ PSLIST_ENTRY ListEntry);
 
-#endif /* LINUX */
+#endif /* LINUX || MACOS */
 
 
 

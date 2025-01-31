@@ -1,6 +1,6 @@
 // util.h : definitions of various utility functions.
 //
-// (c) Ulf Frisk, 2018-2024
+// (c) Ulf Frisk, 2018-2025
 // Author: Ulf Frisk, pcileech@frizk.net
 //
 #ifndef __UTIL_H__
@@ -204,6 +204,15 @@ BOOL Util_FileTime2JSON(_In_ QWORD ft, _Out_writes_(21) LPSTR szTime);
 * -- return
 */
 VOID Util_FileTime2CSV(_In_ QWORD ft, _Out_writes_(22) LPSTR szTime);
+
+/*
+* Convert a ISO8601 time string on the format '2021-04-02T07:17:02.1569629Z' to
+* a Windows FILETIME format.
+* -- szIso8601
+* -- return
+*/
+_Success_(return != 0)
+QWORD Util_TimeIso8601ToFileTime(_In_ LPSTR szIso8601);
 
 /*
 * Convert a GUID in byte format to a GUID in string format.

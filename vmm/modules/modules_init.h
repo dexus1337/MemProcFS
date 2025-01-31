@@ -1,6 +1,6 @@
 // modules_init.h : definitions related to initialization of built-in modules.
 //
-// (c) Ulf Frisk, 2018-2024
+// (c) Ulf Frisk, 2018-2025
 // Author: Ulf Frisk, pcileech@frizk.net
 //
 #ifndef __M_MODULES_H__
@@ -85,6 +85,7 @@ VOID M_Evil_APC1(_In_ VMM_HANDLE H, _Inout_ PVMMDLL_PLUGIN_REGINFO pPluginRegInf
 /*
 * Initialization functions for PROCESS related modules.
 */
+VOID M_ProcConsole_Initialize(_In_ VMM_HANDLE H, _Inout_ PVMMDLL_PLUGIN_REGINFO pPluginRegInfo);
 VOID M_ProcFileHandlesVads_Initialize(_In_ VMM_HANDLE H, _Inout_ PVMMDLL_PLUGIN_REGINFO pPluginRegInfo);
 VOID M_ProcFileModules_Initialize(_In_ VMM_HANDLE H, _Inout_ PVMMDLL_PLUGIN_REGINFO pPluginRegInfo);
 VOID M_ProcHandle_Initialize(_In_ VMM_HANDLE H, _Inout_ PVMMDLL_PLUGIN_REGINFO pPluginRegInfo);
@@ -103,6 +104,7 @@ VOID(*g_pfnModulesAllInternal[])(_In_ VMM_HANDLE H, _In_ PVMMDLL_PLUGIN_REGINFO 
     M_VfsProc_Initialize,
     M_VfsFc_Initialize,
     // per-process modules
+    M_ProcConsole_Initialize,
     M_ProcFileHandlesVads_Initialize,
     M_ProcFileModules_Initialize,
     M_Phys2Virt_Initialize,

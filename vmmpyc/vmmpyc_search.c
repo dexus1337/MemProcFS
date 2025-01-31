@@ -7,7 +7,7 @@
 // If the search doesn't provide enough flexibility it's possible to search
 // using YARA rules - see vmmpyc_yara.c.
 //
-// (c) Ulf Frisk, 2023-2024
+// (c) Ulf Frisk, 2023-2025
 // Author: Ulf Frisk, pcileech@frizk.net
 //
 #include "vmmpyc.h"
@@ -426,7 +426,7 @@ BOOL VmmPycSearch_InitializeType(PyObject *pModule)
         {"addr_max", (getter)VmmPycSearch_addr_max_get, (setter)VmmPycSearch_addr_max_set, "Max address to search.", NULL},
         {"addr_min", (getter)VmmPycSearch_addr_min_get, (setter)VmmPycSearch_addr_min_set, "Min address to search.", NULL},
         {"flags", (getter)VmmPycSearch_flags_get, (setter)VmmPycSearch_flags_set, "Read Flags.", NULL},
-        {"max_results", (getter)VmmPycSearch_max_results_get, (setter)VmmPycSearch_max_results_set, "Max address to search.", NULL},
+        {"max_results", (getter)VmmPycSearch_max_results_get, (setter)VmmPycSearch_max_results_set, "Maximum number of search results before search is stopped.", NULL},
         {"strategy", (getter)VmmPycSearch_strategy_get, (setter)VmmPycSearch_strategy_set, "Search strategy.", NULL},
         {NULL}
     };

@@ -2,7 +2,7 @@
 //        virtual address space. This may mostly (but not exclusively) be used
 //        by Windows functionality.
 //
-// (c) Ulf Frisk, 2018-2024
+// (c) Ulf Frisk, 2018-2025
 // Author: Ulf Frisk, pcileech@frizk.net
 //
 #ifndef __PE_H__
@@ -173,6 +173,24 @@ BOOL PE_SectionGetFromName(
     _In_ PVMM_PROCESS pProcess,
     _In_ QWORD vaModuleBase,
     _In_ LPCSTR szSectionName,
+    _Out_ PIMAGE_SECTION_HEADER pSection
+);
+
+/*
+* Retrieve a single section header given its address offset.
+* -- H
+* -- pProcess
+* -- vaModuleBase
+* -- cboAddress
+* -- pSection
+* -- return
+*/
+_Success_(return)
+BOOL PE_SectionGetFromAddressOffset(
+    _In_ VMM_HANDLE H,
+    _In_ PVMM_PROCESS pProcess,
+    _In_ QWORD vaModuleBase,
+    _In_ DWORD cboAddress,
     _Out_ PIMAGE_SECTION_HEADER pSection
 );
 

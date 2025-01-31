@@ -10,7 +10,7 @@ It's even possible to connect to a remote LeechAgent memory acquisition agent ov
 
 Use your favorite tools to analyze memory - use your favorite hex editors, your python and powershell scripts, WinDbg or your favorite disassemblers and debuggers - all will work trivally with MemProcFS by just reading and writing files!
 
-<p align="center"><img src="https://github.com/ufrisk/MemProcFS/wiki/resources/proc_base3.png" height="190"/><img src="https://github.com/ufrisk/MemProcFS/wiki/resources/pciescreamer.jpeg" height="190"/><img src="https://github.com/ufrisk/MemProcFS/wiki/resources/proc_modules.png" height="190"/></p>
+<p align="center"><img src="https://github.com/ufrisk/MemProcFS/wiki/resources/proc_base3.png" height="190"/><img src="https://github.com/ufrisk/MemProcFS/wiki/resources/pciescreamer.jpeg" height="190"/><img src="https://github.com/ufrisk/MemProcFS/wiki/resources/proc_modules.png" height="190"/><img src="https://github.com/ufrisk/MemProcFS/wiki/resources/root_memprocfs_macos.png" height="190"/></p>
 
 
 
@@ -39,15 +39,18 @@ To capture live memory (without PCILeech FPGA hardware) download [DumpIt](https:
 PCILeech FPGA will require hardware as well as _FTD3XX.dll_ to be dropped alongside the MemProcFS binaries. Please check out the [LeechCore](https://github.com/ufrisk/LeechCore) project for instructions.
 
 ## Linux
-MemProcFS is dependent on packages, do a `sudo apt-get install libusb-1.0 fuse openssl lz4` before trying out MemProcFS. If building from source check out the guide about [MemProcFS on Linux](https://github.com/ufrisk/MemProcFS/wiki/_Linux).
+MemProcFS is dependent on packages, do a `sudo apt-get install libusb-1.0 fuse` before trying out MemProcFS. If building from source check out the guide about [MemProcFS on Linux](https://github.com/ufrisk/MemProcFS/wiki/_Linux).
+
+## macOS
+Download the latest MemProcFS release from [here](https://github.com/ufrisk/MemProcFS/releases/latest). MemProcFS when used as a mounted virtual file system depends on **macFuse** which requires a .kext. Download and install macFuse [here](https://github.com/macfuse/macfuse/releases/latest). If MemProcFS is used via the supported C/C++/Rust APIs macFuse is not required.
 
 
 
-Extensive Python, Rust, Java, C# and C/C++ API:
+Extensive Python, Rust, Java, Go, C# and C/C++ API:
 ===============================
-Include MemProcFS in your [C/C++](https://github.com/ufrisk/MemProcFS/wiki/API_C), [C#](https://github.com/ufrisk/MemProcFS/wiki/API_CSharp), [Java](https://github.com/ufrisk/MemProcFS/wiki/API_Java), [Python](https://github.com/ufrisk/MemProcFS/wiki/API_Python) or [Rust](https://github.com/ufrisk/MemProcFS/wiki/API_Rust) programming projects! Everything in MemProcFS is exposed via an easy-to-use API for use in your own projects! The Plugin friendly architecture allows users to easily extend MemProcFS with C/C++/Rust/Python plugins!
+Include MemProcFS in your [C/C++](https://github.com/ufrisk/MemProcFS/wiki/API_C), [C#](https://github.com/ufrisk/MemProcFS/wiki/API_CSharp), [Java](https://github.com/ufrisk/MemProcFS/wiki/API_Java), [Go](https://github.com/TexHik620953/go-memprocfs/) (3rd party), [Python](https://github.com/ufrisk/MemProcFS/wiki/API_Python) or [Rust](https://github.com/ufrisk/MemProcFS/wiki/API_Rust) programming projects! Everything in MemProcFS is exposed via an easy-to-use API for use in your own projects! The Plugin friendly architecture allows users to easily extend MemProcFS with C/C++/Rust/Python plugins!
 
-Everything in MemProcFS is exposed as APIs. APIs exist for both C/C++ `vmmdll.h`, C# `vmmsharp.cs`, Java, Python [pip package](https://pypi.org/project/memprocfs/) and Rust [crate](https://crates.io/crates/memprocfs). The file system itself is made available virtually via the API without the need to mount it. It is possible to read both virtual process memory as well as physical memory! The example below shows reading 0x20 bytes from physical address 0x1000:
+Everything in MemProcFS is exposed as APIs. APIs exist for both C/C++ `vmmdll.h`, C# [nuget package](https://www.nuget.org/packages/Vmmsharp/), Java, Python [pip package](https://pypi.org/project/memprocfs/) and Rust [crate](https://crates.io/crates/memprocfs). The file system itself is made available virtually via the API without the need to mount it. It is possible to read both virtual process memory as well as physical memory! The example below shows reading 0x20 bytes from physical address 0x1000:
 ```
 >>> import memprocfs
 >>> vmm = memprocfs.Vmm(['-device', 'c:/temp/win10_memdump.raw'])
@@ -114,7 +117,6 @@ Links:
 * PCILeech FPGA: https://github.com/ufrisk/pcileech-fpga
 * LeechCore: https://github.com/ufrisk/LeechCore
 * MemProcFS: https://github.com/ufrisk/MemProcFS
-* YouTube: https://www.youtube.com/channel/UC2aAi-gjqvKiC7s7Opzv9rg
 * Blog: http://blog.frizk.net
 
 
@@ -197,7 +199,6 @@ v5.7
 * Yara scans of file objects (increased chance of vulnerable driver detection by FindEvil).
 * Improved FPGA performance for smaller reads.
 * Improved [MemProcFS remoting](https://github.com/ufrisk/MemProcFS/wiki/_Remoting) via a remote [LeechAgent](https://github.com/ufrisk/LeechCore/wiki/LeechAgent). Full MemProcFS remote support over SMB - tcp/445. Perfect for memory forensics Incident Response (IR)!
-</details>
 
 v5.8
 * LeechCore API updates for C/C++, C#, Rust, Python, Java.
@@ -213,8 +214,10 @@ v5.8
 * FindEvil: AV detections from Windows Defender residing on the analyzed system.
 * Python API: new functionality (multi-read, type-read) and improved scatter read performance.
 * Support for Proxmox memory dump files.
+</details>
 
-Latest:
+[v5.10](https://github.com/ufrisk/MemProcFS/releases/tag/v5.10)
+* Support for Windows 11 24H2 release.
 * Bug fixes.
 * Added named _SECTION objects to VAD map.
 * `-memmap auto` improvements.
@@ -224,3 +227,24 @@ Latest:
 * [Eventlog module](https://github.com/ufrisk/MemProcFS/wiki/FS_Misc_Eventlog) for convenient access to event log files.
 * Binary search API now allows for up to 16M search terms (up from previous 16).
 * Prefetch parsing.
+
+[v5.11](https://github.com/ufrisk/MemProcFS/releases/tag/v5.11)
+* Bug fixes.
+* [New Vmmsharp C# API](https://github.com/ufrisk/MemProcFS/wiki/API_CSharp).
+
+[v5.12](https://github.com/ufrisk/MemProcFS/releases/tag/v5.12)
+* Bug fixes.
+* updates (FindEvil, New signatures, etc.).
+* New APIs for Kernel Objects, Drivers and Devices.
+
+[v5.13](https://github.com/ufrisk/MemProcFS/releases/tag/v5.13)
+* Bug fixes.
+* New [console module](https://github.com/ufrisk/MemProcFS/wiki/FS_Process_Console) added.
+* File recovery improvements (file sizes, signing info) for [files module](https://github.com/ufrisk/MemProcFS/wiki/FS_Forensic_Files).
+* Memory callback API functionality (C/C++ API only).
+* [Callstack parsing](https://github.com/ufrisk/MemProcFS/wiki/FS_Process_Threads) for x64 user-mode process callstacks.
+
+[v5.14](https://github.com/ufrisk/MemProcFS/releases/tag/v5.14)
+* Bug fixes.
+* Linux clang compilation support.
+* macOS support.

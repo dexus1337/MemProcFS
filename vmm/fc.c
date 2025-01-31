@@ -9,7 +9,7 @@
 //      is generally stored in an sqlite database with may be used to query
 //      the results.
 //
-// (c) Ulf Frisk, 2020-2024
+// (c) Ulf Frisk, 2020-2025
 // Author: Ulf Frisk, pcileech@frizk.net
 //
 
@@ -1299,7 +1299,7 @@ VOID FcScanVirtmem_ScanRanges_Object(_In_ VMM_HANDLE H, _In_ PFCOB_SCAN_VIRTMEM_
 {
     QWORD tcStart;
     if(pe->tp == VMMDLL_FORENSIC_INGEST_OBJECT_TYPE_FILE) {
-        pe->cbReadActual = VmmWinObjFile_ReadFromObjectAddress(H, pe->vaObject, 0, pe->pb, min(pe->cb, FC_SCAN_VIRTMEM_MAX_CHUNK_SIZE), VMM_FLAG_ZEROPAD_ON_FAIL);
+        pe->cbReadActual = VmmWinObjFile_ReadFromObjectAddress(H, pe->vaObject, 0, pe->pb, min(pe->cb, FC_SCAN_VIRTMEM_MAX_CHUNK_SIZE), VMM_FLAG_ZEROPAD_ON_FAIL, VMMWINOBJ_FILE_TP_DEFAULT);
     }
     if(!pe->cbReadActual || Util_IsZeroBuffer(pe->pb, pe->cb)) {
         InterlockedIncrement64(&ctx->Statistics.cZero);
@@ -1621,9 +1621,9 @@ BOOL FcInitialize_SetPath(_In_ VMM_HANDLE H, _In_ DWORD dwDatabaseType)
     if(!cch || cch > 128) { return FALSE; }
     if(!CharUtil_WtoU(wszTemp, -1, uszTemp, sizeof(uszTemp), NULL, NULL, CHARUTIL_FLAG_STR_BUFONLY)) { return FALSE; }
 #endif /* _WIN32 */
-#ifdef LINUX
+#if defined(LINUX) || defined(MACOS)
     strcpy_s(uszTemp, sizeof(uszTemp), "/tmp/");
-#endif /* LINUX */
+#endif /* LINUX || MACOS */
     if((dwDatabaseType == FC_DATABASE_TYPE_TEMPFILE_CLOSE) || (dwDatabaseType == FC_DATABASE_TYPE_TEMPFILE_NOCLOSE)) {
         GetLocalTime(&st);
         _snprintf_s(

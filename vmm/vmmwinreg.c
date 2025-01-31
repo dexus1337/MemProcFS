@@ -1,6 +1,6 @@
 // vmmwinreg.c : implementation of functionality related to the Windows registry.
 //
-// (c) Ulf Frisk, 2019-2024
+// (c) Ulf Frisk, 2019-2025
 // Author: Ulf Frisk, pcileech@frizk.net
 //
 // Registry key parsing partly built on documentation found at:
@@ -328,7 +328,7 @@ BOOL VmmWinReg_HiveWrite(_In_ VMM_HANDLE H, _In_ POB_REGISTRY_HIVE pRegistryHive
     PVMM_PROCESS pObProcessRegistry = NULL;
     if(!cb || !(pObProcessRegistry = VmmWinReg_GetRegistryProcess(H))) { return FALSE; }
     while(cb) {
-        cbWrite = 0x1000 - (ra & 0xfff);
+        cbWrite = min(cb, 0x1000 - (ra & 0xfff));
         if(VmmWinReg_Reg2Virt(H, pObProcessRegistry, pRegistryHive, ra, &vaWrite) && vaWrite) {
             fSuccess = VmmWrite(H, pObProcessRegistry, vaWrite, pb, cbWrite) && fSuccess;
         } else {
@@ -336,6 +336,7 @@ BOOL VmmWinReg_HiveWrite(_In_ VMM_HANDLE H, _In_ POB_REGISTRY_HIVE pRegistryHive
         }
         ra += cbWrite;
         pb += cbWrite;
+        cb -= cbWrite;
     }
     Ob_DECREF(pObProcessRegistry);
     return fSuccess;

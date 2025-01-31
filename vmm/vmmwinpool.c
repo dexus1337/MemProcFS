@@ -11,7 +11,7 @@
 // WIN10 1507->1803: PagedPool/NonPagedPool not supported.
 // WIN10 1809+: Support but pages may be missing.
 //
-// (c) Ulf Frisk, 2021-2024
+// (c) Ulf Frisk, 2021-2025
 // Author: Ulf Frisk, pcileech@frizk.net
 //
 
@@ -19,6 +19,7 @@
 #include "vmmwindef.h"
 #include "pdb.h"
 #include "util.h"
+#include "statistics.h"
 
 #define VMMWINPOOL_PREFETCH_BUFFER_SIZE     0x00800000
 
@@ -448,6 +449,7 @@ typedef struct tdVMMWINPOOL_OFFSETS {
     } _HEAP_SEG_CONTEXT;
     struct {
         WORD cb;
+        QWORD qwSignatureStaticKey;
     } _HEAP_PAGE_SEGMENT;
     struct {
         WORD cb;
@@ -536,6 +538,7 @@ _Success_(return)
 BOOL VmmWinPool_AllPool1903_Offsets(_In_ VMM_HANDLE H, _In_ PVMM_PROCESS pSystemProcess, _Out_ PVMMWINPOOL_OFFSETS po)
 {
     // static initialization:
+    po->_HEAP_PAGE_SEGMENT.qwSignatureStaticKey = ((H->vmm.kernel.dwVersionBuild < 26100) ? 0xa2e64eada2e64ead : 0);
     po->_EX_POOL_HEAP_MANAGER_STATE.oHeapKey = 0;
     po->_EX_HEAP_POOL_NODE.oHeaps = 0;
     if(H->vmm.f32) {
@@ -728,7 +731,7 @@ BOOL VmmWinPool_AllPool1903_3_HeapFillPageSegment_ProcessSingleCandidate(_In_ VM
     if(!(pe = ObMap_GetByKey(ctx->pmPgSeg, va))) { return TRUE; }
     if(!VmmRead2(H, ctx->pSystemProcess, pe->va, pe->pb, ctx->po->_HEAP_PAGE_SEGMENT.cb, VMMDLL_FLAG_FORCECACHE_READ)) { return FALSE; }
     // signature check
-    vaSignature = VMM_PTR_OFFSET_DUAL(f32, pe->pb, 8, 16) ^ ctx->qwKeyHeap ^ va ^ 0xa2e64eada2e64ead;
+    vaSignature = VMM_PTR_OFFSET_DUAL(f32, pe->pb, 8, 16) ^ ctx->qwKeyHeap ^ va ^ ctx->po->_HEAP_PAGE_SEGMENT.qwSignatureStaticKey;
     if(!VMM_KADDR_4_8(f32, vaSignature)) { return TRUE; }
     pe->fValid = TRUE;
     // flink/blink
@@ -927,11 +930,12 @@ VOID VmmWinPool_AllPool1903_5_LFH_DoWork(
     UCHAR ucBits;
     PBYTE pbBitmap;
     DWORD iBlock, cBlock, oBlock;
-    DWORD cbBlockSize, oFirstBlock;
+    DWORD cbBlockSize, oFirstBlock, dwvaShift;
     P_HEAP_LFH_SUBSEGMENT_ENCODED_OFFSETS pEncoded;
     pbBitmap = pb + ctx->po->_HEAP_LFH_SUBSEGMENT.oBlockBitmap;
     pEncoded = (P_HEAP_LFH_SUBSEGMENT_ENCODED_OFFSETS)(pb + ctx->po->_HEAP_LFH_SUBSEGMENT.oBlockOffsets);
-    pEncoded->EncodedData = (DWORD)(pEncoded->EncodedData ^ ctx->qwKeyLfh ^ ((DWORD)va >> 12));
+    dwvaShift = (H->vmm.kernel.dwVersionBuild >= 26100) ? ((DWORD)(va >> 12)) : ((DWORD)va >> 12);
+    pEncoded->EncodedData = (DWORD)(pEncoded->EncodedData ^ ctx->qwKeyLfh ^ dwvaShift);
     oFirstBlock = pEncoded->FirstBlockOffset;
     cbBlockSize = pEncoded->BlockSize;
     if((cbBlockSize >= 0xff8) || (oFirstBlock > cb)) { return; }
@@ -1313,13 +1317,16 @@ PVMMOB_MAP_POOL VmmWinPool_Initialize(_In_ VMM_HANDLE H, _In_ BOOL fAll)
 {
     PVMM_PROCESS pObSystemProcess = NULL;
     PVMMOB_MAP_POOL pObPoolBig = NULL, pObPoolAll = NULL;
+    VMMSTATISTICS_LOG Statistics = { 0 };
     if(fAll && (pObPoolAll = ObContainer_GetOb(H->vmm.pObCMapPoolAll))) { return pObPoolAll; }
     if((pObPoolBig = ObContainer_GetOb(H->vmm.pObCMapPoolBig)) && !fAll) { return pObPoolBig; }
     // fetch big pool map (if required)
     if(!pObPoolBig && (pObSystemProcess = VmmProcessGet(H, 4))) {
         EnterCriticalSection(&H->vmm.LockUpdateMap);
         if(!(pObPoolBig = ObContainer_GetOb(H->vmm.pObCMapPoolBig))) {
+            VmmStatisticsLogStart(H, MID_POOL, LOGLEVEL_6_TRACE, NULL, &Statistics, "INIT POOL(BIG)");
             pObPoolBig = VmmWinPool_Initialize_BigPool_DoWork(H, pObSystemProcess);
+            VmmStatisticsLogEnd(H, &Statistics, "INIT POOL(BIG)");
             ObContainer_SetOb(H->vmm.pObCMapPoolBig, pObPoolBig);
         }
         LeaveCriticalSection(&H->vmm.LockUpdateMap);
@@ -1330,7 +1337,9 @@ PVMMOB_MAP_POOL VmmWinPool_Initialize(_In_ VMM_HANDLE H, _In_ BOOL fAll)
     if(!pObPoolAll && (pObSystemProcess = VmmProcessGet(H, 4))) {
         EnterCriticalSection(&H->vmm.LockUpdateMap);
         if(!(pObPoolAll = ObContainer_GetOb(H->vmm.pObCMapPoolAll))) {
+            VmmStatisticsLogStart(H, MID_POOL, LOGLEVEL_6_TRACE, NULL, &Statistics, "INIT POOL(ALL)");
             pObPoolAll = VmmWinPool_Initialize_AllPool_DoWork(H, pObSystemProcess, pObPoolBig);
+            VmmStatisticsLogEnd(H, &Statistics, "INIT POOL(ALL)");
             if(!pObPoolAll) {
                 // if all pool map fail - fallback to big pool map
                 pObPoolAll = Ob_INCREF(pObPoolBig);

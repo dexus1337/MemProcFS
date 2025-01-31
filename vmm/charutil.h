@@ -1,6 +1,6 @@
 // charutil.h : definitions of various character/string utility functions.
 //
-// (c) Ulf Frisk, 2021-2024
+// (c) Ulf Frisk, 2021-2025
 // Author: Ulf Frisk, pcileech@frizk.net
 //
 #ifndef __CHARUTIL_H__
@@ -18,6 +18,7 @@ typedef unsigned __int64                QWORD, *PQWORD;
 #define CHARUTIL_FLAG_TRUNCATE                  0x0002
 #define CHARUTIL_FLAG_TRUNCATE_ONFAIL_NULLSTR   0x0006
 #define CHARUTIL_FLAG_STR_BUFONLY               0x0008
+#define CHARUTIL_FLAG_BAD_UTF8CP_SOFTFAIL       0x0010
 
 /*
 * Check whether a string is an ansi-string (only codepoints between 0-127).
@@ -269,6 +270,23 @@ DWORD CharUtil_FixFsName(
     _In_opt_ DWORD iSuffix,
     _In_ BOOL fUpper
 );
+
+/*
+* Replace illegal characters in a text with a character of the users choosing.
+* The result is returned as a utf-8 string.
+* -- uszOut
+* -- cbuDst
+* -- usz
+* -- sz
+* -- wsz
+* -- cwsz
+* -- cch = number of bytes/wchars in usz/sz/wsz or _TRUNCATE
+* -- chReplace = character to replace illegal characters with.
+* -- chAllowArray = array of 0(illegal char) or 1(allowed char) for each character in the 0-127 range.
+* -- return = number of bytes written (including terminating NULL).
+*/
+_Success_(return != 0)
+DWORD CharUtil_ReplaceMultiple(_Out_writes_(cbuDst) LPSTR uszOut, _In_ DWORD cbuDst, _In_opt_ LPCSTR usz, _In_opt_ LPCSTR sz, _In_opt_ LPCWSTR wsz, _In_ DWORD cch, _In_ CHAR chAllowArray[128], _In_ CHAR chNew);
 
 /*
 * Replace all characters in a string.
