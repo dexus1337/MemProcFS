@@ -248,3 +248,7 @@ v5.8
 * Bug fixes.
 * Linux clang compilation support.
 * macOS support.
+
+Latest:
+* Bug fixes.
+* Linux LeechAgent support using gRPC (LeechCore v2.21).
