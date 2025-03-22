@@ -32,3 +32,4 @@ Cargo.lock
 /vmmsharp/vmmsharp/bin
 /vmmsharp/vmmsharp/obj
 /memprocfs/.vs
+/vmm/.vs
