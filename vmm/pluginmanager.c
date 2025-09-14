@@ -8,10 +8,15 @@
 #include "charutil.h"
 #include "util.h"
 #include "vmm.h"
+#include "vmmex.h"
 #include "vmmdll.h"
 #include "vmmlog.h"
 #include "fc.h"
 #include "modules/modules_init.h"
+
+#ifdef VMM_PROFILE_FULL
+#include "ex/vmmex_modules_init.h"
+#endif /* VMM_PROFILE_FULL */
 
 //
 // This file contains functionality related to keeping track of plugins, both
@@ -951,41 +956,43 @@ fail:
 VOID PluginManager_Initialize_ExternalDlls(_In_ VMM_HANDLE H)
 {
     VMMDLL_PLUGIN_REGINFO ri;
-    CHAR szPath[MAX_PATH];
+    CHAR uszPath[MAX_PATH];
+    WCHAR wszPath[MAX_PATH];
     DWORD cchPathBase;
     HANDLE hFindFile;
-    WIN32_FIND_DATAA FindData;
+    WIN32_FIND_DATAW FindData;
     HMODULE hDLL;
     VOID(*pfnInitializeVmmPlugin)(_In_ VMM_HANDLE H, _In_ PVMMDLL_PLUGIN_REGINFO pRegInfo);
-    Util_GetPathLib(szPath);
-    cchPathBase = (DWORD)strnlen(szPath, MAX_PATH - 1);
-    strcat_s(szPath, MAX_PATH, "plugins\\m_*"VMM_LIBRARY_FILETYPE);
-    hFindFile = FindFirstFileA(szPath, &FindData);
+    Util_GetPathLib(uszPath);
+    if(!CharUtil_UtoW(uszPath, (DWORD)-1, (PBYTE)wszPath, sizeof(wszPath), NULL, NULL, CHARUTIL_FLAG_STR_BUFONLY)) { return; }
+    cchPathBase = (DWORD)wcsnlen(wszPath, MAX_PATH - 1);
+    wcscat_s(wszPath, MAX_PATH, L"plugins\\m_*.dll");
+    hFindFile = FindFirstFileW(wszPath, &FindData);
     if(hFindFile != INVALID_HANDLE_VALUE) {
         do {
-            szPath[min(cchPathBase, MAX_PATH - 1)] = '\0';
-            strcat_s(szPath, MAX_PATH, "plugins\\");
-            strcat_s(szPath, MAX_PATH, FindData.cFileName);
-            hDLL = LoadLibraryExA(szPath, 0, 0);
+            wszPath[min(cchPathBase, MAX_PATH - 1)] = L'\0';
+            wcscat_s(wszPath, MAX_PATH, L"plugins\\");
+            wcscat_s(wszPath, MAX_PATH, FindData.cFileName);
+            hDLL = LoadLibraryExW(wszPath, 0, 0);
             if(!hDLL) {
-                VmmLog(H, MID_PLUGIN, LOGLEVEL_DEBUG, "FAIL: Load DLL: '%s' - missing dependencies?", FindData.cFileName);
+                VmmLog(H, MID_PLUGIN, LOGLEVEL_DEBUG, "FAIL: Load DLL: '%S' - missing dependencies?", FindData.cFileName);
                 continue;
             }
-            VmmLog(H, MID_PLUGIN, LOGLEVEL_DEBUG, "Load DLL: '%s'", FindData.cFileName);
+            VmmLog(H, MID_PLUGIN, LOGLEVEL_DEBUG, "Load DLL: '%S'", FindData.cFileName);
             pfnInitializeVmmPlugin = (VOID(*)(VMM_HANDLE, PVMMDLL_PLUGIN_REGINFO))GetProcAddress(hDLL, "InitializeVmmPlugin");
             if(!pfnInitializeVmmPlugin) {
-                VmmLog(H, MID_PLUGIN, LOGLEVEL_DEBUG, "Unload DLL: '%s' - Plugin Entry Point not found", FindData.cFileName);
+                VmmLog(H, MID_PLUGIN, LOGLEVEL_DEBUG, "Unload DLL: '%S' - Plugin Entry Point not found", FindData.cFileName);
                 FreeLibrary(hDLL);
                 continue;
             }
             PluginManager_Initialize_RegInfoInit(H, &ri, hDLL);
             pfnInitializeVmmPlugin(H, &ri);
             if(!PluginManager_ModuleExistsDll(H, hDLL)) {
-                VmmLog(H, MID_PLUGIN, LOGLEVEL_DEBUG, "Unload DLL: '%s' - not registered with plugin manager", FindData.cFileName);
+                VmmLog(H, MID_PLUGIN, LOGLEVEL_DEBUG, "Unload DLL: '%S' - not registered with plugin manager", FindData.cFileName);
                 FreeLibrary(hDLL);
                 continue;
             }
-        } while(FindNextFileA(hFindFile, &FindData) && !H->fAbort);
+        } while(FindNextFileW(hFindFile, &FindData) && !H->fAbort);
         FindClose(hFindFile);
     }
 }
@@ -1124,19 +1131,17 @@ VOID PluginManager_Initialize_ExternalDlls(_In_ VMM_HANDLE H)
         VmmLog(H, MID_PLUGIN, LOGLEVEL_DEBUG, "FAIL load external modules - plugins directory missing");
         return;
     }
-    if(!dp) { return; }
     while((ep = readdir(dp)) && !H->fAbort) {
         if((ep->d_name[0] != 'm') || (ep->d_name[1] != '_')) { continue; }
         if(!CharUtil_StrEndsWith(ep->d_name, VMM_LIBRARY_FILETYPE, TRUE)) { continue; }
-
+        szPath[cchPathBase] = '\0';
         strcat_s(szPath + cchPathBase, MAX_PATH - cchPathBase, ep->d_name);
+        VmmLog(H, MID_PLUGIN, LOGLEVEL_6_TRACE, "Try load external module '%s'", szPath);
         hDLL = dlopen(szPath, RTLD_NOW);
         if(!hDLL) {
-            VmmLog(H, MID_PLUGIN, LOGLEVEL_DEBUG, "FAIL load external module '%s' - missing dependencies?", ep->d_name);
+            VmmLog(H, MID_PLUGIN, LOGLEVEL_DEBUG, "FAIL load external module '%s' - ('%s') missing dependencies?", ep->d_name, dlerror());
             continue;
         }
-
-
         pfnInitializeVmmPlugin = (VOID(*)(VMM_HANDLE, PVMMDLL_PLUGIN_REGINFO))dlsym(hDLL, "InitializeVmmPlugin");
         if(!pfnInitializeVmmPlugin) {
             VmmLog(H, MID_PLUGIN, LOGLEVEL_DEBUG, "FAIL load external module '%s' - plugin entry point not found", ep->d_name);
@@ -1175,6 +1180,11 @@ BOOL PluginManager_Initialize(_In_ VMM_HANDLE H)
         if(H->fAbort) { goto fail; }
         PluginManager_Initialize_RegInfoInit(H, &ri, NULL);
         g_pfnModulesAllInternal[i](H, &ri);
+    }
+    for(i = 0; i < sizeof(g_pfnModulesExAllInternal) / sizeof(PVOID); i++) {
+        if(H->fAbort) { goto fail; }
+        PluginManager_Initialize_RegInfoInit(H, &ri, NULL);
+        g_pfnModulesExAllInternal[i](H, &ri);
     }
     // 4: process dll modules
     PluginManager_Initialize_ExternalDlls(H);

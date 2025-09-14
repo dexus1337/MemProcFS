@@ -248,10 +248,10 @@ NTSTATUS Util_VfsReadFile_FromMEM(_In_ VMM_HANDLE H, _In_opt_ PVMM_PROCESS pProc
     if(cbOffset < cbMEM) {
         vaMEM += cbOffset;
         cbMEM -= cbOffset;
+        cbMEM = min(cbMEM, cb);
         if((cbMEM < 0x04000000) && (pbMEM = LocalAlloc(0, (SIZE_T)cbMEM))) {
-            if(VmmRead2(H, pProcess, vaMEM, pbMEM, (DWORD)cbMEM, flags)) {
-                nt = Util_VfsReadFile_FromPBYTE(pbMEM, cbMEM, pb, cb, pcbRead, 0);
-            }
+            VmmRead2(H, pProcess, vaMEM, pbMEM, (DWORD)cbMEM, flags | VMM_FLAG_ZEROPAD_ON_FAIL);
+            nt = Util_VfsReadFile_FromPBYTE(pbMEM, cbMEM, pb, cb, pcbRead, 0);
             LocalFree(pbMEM);
         }
     }
@@ -1124,6 +1124,14 @@ fail:
     return VMMDLL_STATUS_FILE_INVALID;
 }
 
+NTSTATUS Util_VfsReadFile_FromResourceEncrypted(_In_ VMM_HANDLE H, _In_ LPWSTR wszResourceName, _Out_writes_to_(cb, *pcbRead) PBYTE pb, _In_ DWORD cb, _Out_ PDWORD pcbRead, _In_ QWORD cbOffset)
+{
+    DWORD i, cMax;
+    NTSTATUS nt = Util_VfsReadFile_FromResource(H, wszResourceName, pb, cb, pcbRead, cbOffset);
+    for(i = 0, cMax = *pcbRead; i < cMax; i++) { pb[i] ^= 0xAB; }
+    return nt;
+}
+
 /*
 * Delete a file denoted by its utf-8 full path.
 * -- uszPathFile
@@ -1134,6 +1142,40 @@ VOID Util_DeleteFileU(_In_ LPCSTR uszPathFile)
     if(CharUtil_UtoW(uszPathFile, -1, (PBYTE)wszWinPath, sizeof(wszWinPath), NULL, NULL, CHARUTIL_FLAG_STR_BUFONLY)) {
         DeleteFileW(wszWinPath);
     }
+}
+
+/*
+* Read a file given by its utf-8 full path into a newly allocated buffer.
+* CALLER LocalFree: *ppbFile
+* -- uszPathFile
+* -- ppbFile
+* -- pcbFile
+* -- return
+*/
+BOOL Util_ReadFileU(_In_ LPCSTR uszPathFile, _Out_ PBYTE *ppbFile, _Out_ PDWORD pcbFile)
+{
+    BOOL fResult = FALSE;
+    HANDLE hFile = INVALID_HANDLE_VALUE;
+    DWORD cbFile, cbRead;
+    PBYTE pbFile = NULL;
+    WCHAR wszWinPath[MAX_PATH];
+    *ppbFile = NULL;
+    *pcbFile = 0;
+    if(!CharUtil_UtoW(uszPathFile, -1, (PBYTE)wszWinPath, sizeof(wszWinPath), NULL, NULL, CHARUTIL_FLAG_STR_BUFONLY)) { goto fail; }
+    hFile = CreateFileW(wszWinPath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if(!hFile || (hFile == INVALID_HANDLE_VALUE)) { goto fail; }
+    cbFile = GetFileSize(hFile, NULL);
+    if((cbFile > 0x00100000) || (cbFile == INVALID_FILE_SIZE)) { goto fail; }
+    if(!(pbFile = LocalAlloc(LMEM_ZEROINIT, cbFile))) { goto fail; }
+    if(!ReadFile(hFile, pbFile, cbFile, &cbRead, NULL) || (cbRead != cbFile)) { goto fail; }
+    *ppbFile = pbFile;
+    *pcbFile = cbFile;
+    pbFile = NULL;
+    fResult = TRUE;
+fail:
+    if(hFile && (hFile != INVALID_HANDLE_VALUE)) { CloseHandle(hFile); }
+    LocalFree(pbFile);
+    return fResult;
 }
 
 #endif /* _WIN32 */
@@ -1167,6 +1209,41 @@ VOID Util_DeleteFileU(_In_ LPCSTR uszPathFile)
     remove(uszPathFile);
 }
 
+/*
+* Read a file given by its utf-8 full path into a newly allocated buffer.
+* CALLER LocalFree: *ppbFile
+* -- uszPathFile
+* -- ppbFile
+* -- pcbFile
+* -- return
+*/
+BOOL Util_ReadFileU(_In_ LPCSTR uszPathFile, _Out_ PBYTE * ppbFile, _Out_ PDWORD pcbFile)
+{
+    BOOL fResult = FALSE;
+    FILE *f = NULL;
+    DWORD cbFile, cbRead;
+    PBYTE pbFile = NULL;
+    *ppbFile = NULL;
+    *pcbFile = 0;
+    if(fopen_s(&f, uszPathFile, "rb") || !f) { goto fail; }
+    if(fseek(f, 0, SEEK_END)) { goto fail; }
+    if((cbFile = ftell(f)) == (DWORD)-1) { goto fail; }
+    if(cbFile > 0x00100000) { goto fail; }
+    if(fseek(f, 0, SEEK_SET)) { goto fail; }
+    if(!cbFile) { goto fail; }
+    if(!(pbFile = LocalAlloc(LMEM_ZEROINIT, cbFile))) { goto fail; }
+    if((cbRead = (DWORD)fread(pbFile, 1, cbFile, f)) != cbFile) { goto fail; }
+    *ppbFile = pbFile;
+    *pcbFile = cbFile;
+    pbFile = NULL;
+    fResult = TRUE;
+fail:
+    if(f) { fclose(f); }
+    LocalFree(pbFile);
+    return fResult;
+}
+
 DWORD Util_ResourceSize(_In_ VMM_HANDLE H, _In_ LPWSTR wszResourceName) { return 0; }
 NTSTATUS Util_VfsReadFile_FromResource(_In_ VMM_HANDLE H, _In_ LPWSTR wszResourceName, _Out_writes_to_(cb, *pcbRead) PBYTE pb, _In_ DWORD cb, _Out_ PDWORD pcbRead, _In_ QWORD cbOffset) { return VMMDLL_STATUS_FILE_INVALID; }
+NTSTATUS Util_VfsReadFile_FromResourceEncrypted(_In_ VMM_HANDLE H, _In_ LPWSTR wszResourceName, _Out_writes_to_(cb, *pcbRead) PBYTE pb, _In_ DWORD cb, _Out_ PDWORD pcbRead, _In_ QWORD cbOffset) { return VMMDLL_STATUS_FILE_INVALID; }
 #endif /* LINUX || MACOS */

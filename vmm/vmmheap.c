@@ -194,7 +194,7 @@ VOID VmmHeapAlloc_PushItem(
     pe->cb = cb;
     pe->tp = tp;
     pStore->c++;
-    VmmLog(H, MID_HEAP, LOGLEVEL_6_TRACE, "[%-8s %llx +%x]", VMM_HEAPALLOC_TP_STR[pe->tp], pe->va, pe->cb);
+    VmmLog(H, MID_HEAP, LOGLEVEL_6_TRACE, " [%-8s %llx +%x]", VMM_HEAPALLOC_TP_STR[pe->tp], pe->va, pe->cb);
 }
 
 /*
@@ -315,7 +315,7 @@ PVMMOB_MAP_HEAPALLOC VmmHeapAlloc_Init_DoWork(_In_ VMM_HANDLE H, _In_ PVMM_PROCE
     // 1: init
     if(!(ctx = LocalAlloc(LMEM_ZEROINIT, sizeof(VMMHEAPNT_CTX)))) { goto fail; }
     if(!VmmMap_GetHeap(H, pProcess, &ctx->pHeapMap) || !(ctx->pHeapEntry = VmmMap_GetHeapEntry(H, ctx->pHeapMap, vaHeap))) {
-        VmmLog(H, MID_HEAP, LOGLEVEL_5_DEBUG, "FAIL: NO HEAP ENTRY: pid=%i %va=%llx", pProcess->dwPID, vaHeap);
+        VmmLog(H, MID_HEAP, LOGLEVEL_5_DEBUG, "FAIL: NO HEAP ENTRY: pid=%i va=%llx", pProcess->dwPID, vaHeap);
         goto fail;
     }
     ctx->f32 = ctx->pHeapEntry->f32;
@@ -328,7 +328,7 @@ PVMMOB_MAP_HEAPALLOC VmmHeapAlloc_Init_DoWork(_In_ VMM_HANDLE H, _In_ PVMM_PROCE
     } else if(ctx->pHeapEntry->tp == VMM_HEAP_TP_SEG) {
         VmmHeapAlloc_SegInit(H, ctx);
     } else {
-        VmmLog(H, MID_HEAP, LOGLEVEL_2_WARNING, "FAIL: UNSUPPORTED HEAP TYPE - SHOULD NOT HAPPEN!: pid=%i %va=%llx", pProcess->dwPID, vaHeap);
+        VmmLog(H, MID_HEAP, LOGLEVEL_2_WARNING, "FAIL: UNSUPPORTED HEAP TYPE - SHOULD NOT HAPPEN!: pid=%i va=%llx", pProcess->dwPID, vaHeap);
         goto fail;
     }
     // 3: add large entries from heap map segments
@@ -445,7 +445,7 @@ typedef union tdVMMHEAPALLOC_SEG_HEAP_VS_CHUNK_HEADER_SIZE64 {
 * Parse the vs heap segment - [ntdll!_HEAP_VS_SUBSEGMENT] // [ntdll!_HEAP_VS_CHUNK_HEADER]
 * TODO: VERIFY HEAP ALLOCATIONS BETTER!
 */
-VOID VmmHeapAlloc_SegVS(_In_ VMM_HANDLE H, _In_ PVMMHEAPNT_CTX ctx, _In_ DWORD iCtx, _In_ QWORD va, _In_ PBYTE pb, _In_ DWORD cb)
+VOID VmmHeapAlloc_SegVS(_In_ VMM_HANDLE H, _In_ PVMMHEAPNT_CTX ctx, _In_ QWORD va, _In_ PBYTE pb, _In_ DWORD cb)
 {
     DWORD cbPoolHdr, oVsChunkHdr, cbChunkSize, oBlock, cbBlock, cbAdjust;
     QWORD vaBlock, vaChunkHeader;
@@ -453,6 +453,7 @@ VOID VmmHeapAlloc_SegVS(_In_ VMM_HANDLE H, _In_ PVMMHEAPNT_CTX ctx, _In_ DWORD i
     BOOL fAlloc;
     PVMMHEAPALLOC_SEG_HEAP_VS_CHUNK_HEADER_SIZE32 pChunkSize32;
     PVMMHEAPALLOC_SEG_HEAP_VS_CHUNK_HEADER_SIZE64 pChunkSize64;
+    VmmLog(H, MID_HEAP, LOGLEVEL_6_TRACE, "[SegVsR   %llx +%x]", va, cb);
     // 32/64-bit dependent offsets:
     if(ctx->f32) {
         cbPoolHdr = 8;
@@ -467,7 +468,9 @@ VOID VmmHeapAlloc_SegVS(_In_ VMM_HANDLE H, _In_ PVMMHEAPNT_CTX ctx, _In_ DWORD i
     }
     // signature check: _HEAP_VS_SUBSEGMENT
     if(wSize != (wSignature ^ 0x2BED)) {
-        return;
+        if(wSignature & 0xf000) {
+            return;
+        }
     }
     // loop over pool entries
     while(oVsChunkHdr + 0x30 < cb) {
@@ -510,13 +513,14 @@ VOID VmmHeapAlloc_SegVS(_In_ VMM_HANDLE H, _In_ PVMMHEAPNT_CTX ctx, _In_ DWORD i
 * Parse the low fragmentation heap segment - [ntdll!_HEAP_LFH_SUBSEGMENT]
 * TODO: VERIFY HEAP ALLOCATIONS BETTER!
 */
-VOID VmmHeapAlloc_SegLFH(_In_ VMM_HANDLE H, _In_ PVMMHEAPNT_CTX ctx, _In_ DWORD iCtx, _In_ QWORD va, _In_ PBYTE pb, _In_ DWORD cb)
+VOID VmmHeapAlloc_SegLFH(_In_ VMM_HANDLE H, _In_ PVMMHEAPNT_CTX ctx, _In_ QWORD va, _In_ PBYTE pb, _In_ DWORD cb)
 {
     UCHAR ucBits;
     PBYTE pbBitmap;
     DWORD iBlock, cBlock, oBlock;
     DWORD cbBlockSize, oFirstBlock, dwvaShift;
     PVMMHEAPALLOC_SEG_LFHENCODED_OFFSETS pEncoded;
+    VmmLog(H, MID_HEAP, LOGLEVEL_6_TRACE, "[SegLfhR  %llx +%x]", va, cb);
     pbBitmap = pb + ctx->po->seg.HEAP_LFH_SUBSEGMENT.BlockBitmap;
     pEncoded = (PVMMHEAPALLOC_SEG_LFHENCODED_OFFSETS)(pb + ctx->po->seg.HEAP_LFH_SUBSEGMENT.BlockOffsets);
     dwvaShift = (H->vmm.kernel.dwVersionBuild >= 26100) ? ((DWORD)(va >> 12)) : ((DWORD)va >> 12);
@@ -556,10 +560,10 @@ DWORD VmmHeapAlloc_SegRangeDescriptor(_In_ VMM_HANDLE H, _In_ PVMMHEAPNT_CTX ctx
         // Large Pool - not yet supported!
     } else if(ucRangeFlags == 11) {
         // Lfh
-        VmmHeapAlloc_SegLFH(H, ctx, iCtx, vaPgSeg + oRange, pbPgSeg + oRange, cbRange);
+        VmmHeapAlloc_SegLFH(H, ctx, vaPgSeg + oRange, pbPgSeg + oRange, cbRange);
     } else if(ucRangeFlags == 15) {
         // Vs
-        VmmHeapAlloc_SegVS(H, ctx, iCtx, vaPgSeg + oRange, pbPgSeg + oRange, cbRange);
+        VmmHeapAlloc_SegVS(H, ctx, vaPgSeg + oRange, pbPgSeg + oRange, cbRange);
     }
     return ucUnitSize;
 }

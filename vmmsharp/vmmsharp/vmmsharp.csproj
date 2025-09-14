@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net48;net5.0;net6.0;net7.0;net8.0</TargetFrameworks>
+    <TargetFrameworks>net48;net5.0;net6.0;net7.0;net8.0;net9.0</TargetFrameworks>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <OutputType>Library</OutputType>
     <RootNamespace>Vmmsharp</RootNamespace>
@@ -109,7 +109,7 @@
 		<None Include="logo.png" Pack="true" Visible="true" PackagePath="" />
 	</ItemGroup>
     <PropertyGroup>
-        <Version>5.14.10</Version>
+        <Version>5.15.8</Version>
         <RepositoryUrl>https://github.com/ufrisk/MemProcFS</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
         <PackageLicenseFile>LICENSE</PackageLicenseFile>
